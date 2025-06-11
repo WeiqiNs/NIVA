@@ -10,29 +10,25 @@ def mod_floor(a: int, b: int) -> int:
     return r
 
 
-def prime_form(D: int, p: int) -> BinaryQF:
-    """
-    Construct a binary quadratic form [p, b, c] of discriminant D representing prime p.
-    Mimics PARI/GP's primeform(D, p).
-    """
-    if D >= 0 or D % 4 not in [0, 1]:
+def prime_form(disc: int, p: int) -> BinaryQF:
+    """Construct a binary quadratic form [p, b, c] of discriminant disc representing prime p."""
+    if disc >= 0 or disc % 4 not in [0, 1]:
         raise ValueError("D must be a negative discriminant congruent to 0 or 1 mod 4")
     if not is_prime(p):
         raise ValueError("p must be a prime integer")
 
+    # Mimics PARI/GP's primeform(disc, p).
     modulus = 4 * p
     for b in range(2 * p):
-        if (b * b - D) % modulus == 0:
-            c = (b * b - D) // (4 * p)
+        if (b * b - disc) % modulus == 0:
+            c = (b * b - disc) // (4 * p)
             return BinaryQF([p, b, c])  # Automatically reduced
 
-    raise ValueError(f"No valid b found such that b^2 ≡ D mod 4p for D={D}, p={p}")
+    raise ValueError(f"No valid b found such that b^2 ≡ D mod 4p for D={disc}, p={p}")
 
 
 def construct_binary_qf(a: int, b: int, delta: int) -> BinaryQF:
-    """
-    Construct BinaryQF from a, b, delta where delta ≡ 1 mod 4 and delta < 0.
-    """
+    """Construct BinaryQF from a, b, delta where delta ≡ 1 mod 4 and delta < 0."""
     assert mod_floor(delta, 4) == 1, "delta must be ≡ 1 mod 4"
     assert delta < 0, "delta must be negative"
 
@@ -41,51 +37,44 @@ def construct_binary_qf(a: int, b: int, delta: int) -> BinaryQF:
 
 
 def construct_binary_qf_from_principle(delta: int) -> BinaryQF:
-    """
-    Return the principal form for a discriminant delta.
-    """
+    """Return the principal form for a discriminant delta."""
     return construct_binary_qf(a=1, b=1, delta=delta)
 
 
 def binary_qf_pow(f: BinaryQF, n: int) -> BinaryQF:
-    """
-    Raise binary quadratic form f to the power n via repeated composition.
-    Assumes f is reduced and has negative discriminant.
-    """
+    """Raise binary quadratic form f to the power n via repeated composition."""
     if n == 0:
         raise ValueError("n must be a positive integer")
 
-    result = f
-    for _ in range(n - 1):
-        result = (result * f).reduced_form()
+    result = BinaryQF.principal(f.discriminant())
+    base = f
+
+    # Optimize the exponentiation.
+    while n > 0:
+        if n % 2 == 1:
+            result = (result * base).reduced_form()
+        base = (base * base).reduced_form()
+        n //= 2
+
     return result
 
 
 def binary_qf_inverse(f: BinaryQF) -> BinaryQF:
-    """
-    Raise binary quadratic form f to the power n via repeated composition.
-    Assumes f is reduced and has negative discriminant.
-    """
+    """Find the inverse of a binary quadratic form f."""
     return BinaryQF([f[0], -f[1], f[2]]).reduced_form()
 
 
 def phi_q_inverse(f: BinaryQF, conductor: int) -> BinaryQF:
-    """
-    Compute the preimage of a form f under the morphism induced by conductor embedding.
-    """
+    """Compute the preimage of a form f under the morphism induced by conductor embedding."""
     a, b = f[0], f[1]
     b_new = mod_floor(b * conductor, 2 * a)
     delta = f.discriminant() * conductor ** 2
-
     return construct_binary_qf(a, b_new, delta)
 
 
 def expo_f(p: int, delta: int, k: int) -> BinaryQF:
-    """
-    Construct the form f = [p^2, pk_inv, c] with discriminant delta,
-    where k_inv is the inverse of k mod p.
-    If k == 0, return principal form.
-    """
+    """Construct the form f = [p^2, pk_inv, c] with discriminant delta, where k_inv is the inverse of k mod p."""
+    # If k == 0, return principal form.
     if k == 0:
         return construct_binary_qf_from_principle(delta)
 
@@ -99,10 +88,7 @@ def expo_f(p: int, delta: int, k: int) -> BinaryQF:
 
 
 def discrete_log_f(p: int, delta: int, c: BinaryQF) -> int:
-    """
-    Recover exponent x from form c = f^x, where f is the generator constructed from (p, delta).
-    Assumes form is of the shape resulting from expo_f().
-    """
+    """Recover exponent x from form c = f^x, where f is the generator constructed from (p, delta)."""
     principal_qf = construct_binary_qf_from_principle(delta)
     if c == principal_qf:
         return 0

@@ -7,7 +7,7 @@ TEST(R1CSTests, NormEqTrue){
     // Create the R1CS test object
     const auto test = NormEq("test");
     // Generate the proof.
-    BP_R1CS_PROOF* proof = test.prove(55, x);
+    BP_R1CS_PROOF* proof = test.prove(385, x);
     // Perform testing.
     EXPECT_TRUE(test.verify(x.size(), proof));
 }
