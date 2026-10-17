@@ -136,10 +136,30 @@ impl<F: PrimeField> Params<F> {
         self.discriminant_bits
     }
 
+    pub(crate) fn group(&self) -> &ClassGroup {
+        self.hsm.group()
+    }
+
+    pub(crate) fn power_of_generator(&self, exponent: &IBig) -> Form {
+        pow(self.group(), &self.generator, exponent)
+    }
+
+    pub(crate) fn encode(&self, message: F) -> Form {
+        self.hsm.power_of_f(&Self::lift(message))
+    }
+
+    pub(crate) fn sample_randomness(&self, rng: &mut (impl CryptoRng + RngCore)) -> IBig {
+        self.randomness.sample(rng)
+    }
+
+    pub(crate) fn sample_key(&self, rng: &mut (impl CryptoRng + RngCore)) -> IBig {
+        self.key.sample(rng)
+    }
+
     pub(crate) fn decode(&self, form: &Form) -> Result<F, CltError> {
         let doubled = self
             .hsm
-            .solve(&self.hsm.group().square(form))
+            .solve(&self.group().square(form))
             .ok_or(CltError::NotInSubgroup)?;
         Ok(Self::field(&doubled) * self.half)
     }
@@ -247,7 +267,7 @@ pub(crate) mod tests {
 
             let random = Field128::rand(&mut rng);
             for m in [Field128::ZERO, Field128::ONE, -Field128::ONE, random] {
-                let form = hsm.power_of_f(&Params::lift(m));
+                let form = params.encode(m);
                 assert_eq!(params.decode(&form), Ok(m));
             }
         }
