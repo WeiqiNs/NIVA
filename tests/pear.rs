@@ -9,6 +9,7 @@ use rust_flpcp::{Circuit, Flp, FlpError, MeanVariance, NormBound, Range};
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::Debug;
+use std::num::NonZeroUsize;
 
 struct Case<C> {
     circuit: C,
@@ -19,6 +20,11 @@ struct Case<C> {
 
 fn values(values: &[u64]) -> Vec<Field128> {
     values.iter().map(|&value| Field128::from(value)).collect()
+}
+
+fn shape<C: Circuit<Field128>>(circuit: C) -> (usize, usize) {
+    let flp = Flp::<Field128, C>::new(circuit).unwrap();
+    (flp.vector_len(), flp.query_count())
 }
 
 fn roles<C: Circuit<Field128> + Clone>(
@@ -174,6 +180,47 @@ fn setup_errors() {
         .err(),
         Some(PearError::CircuitMismatch)
     );
+
+    let shorter_input = Range {
+        len: 3,
+        bounds: 0..=4,
+    };
+    assert_eq!(shape(shorter_input.clone()), shape(Range::binary(4)));
+    assert_eq!(
+        Server::new(
+            shorter_input,
+            public_key.clone(),
+            setup.verification_key.clone()
+        )
+        .err(),
+        Some(PearError::CircuitMismatch)
+    );
+
+    let fewer_queries = Range {
+        len: 2,
+        bounds: 0..=3,
+    };
+    let more_queries = NormBound {
+        len: 1,
+        input_bits: 1,
+        norm_bits: 2,
+        square_chunk: NonZeroUsize::new(1),
+    };
+    assert_eq!(
+        shape(more_queries.clone()).0,
+        shape(fewer_queries.clone()).0
+    );
+    let (fewer_queries_setup, _, _) = roles(&fewer_queries, 2);
+    assert_eq!(
+        Server::new(
+            more_queries,
+            fewer_queries_setup.public_key,
+            fewer_queries_setup.verification_key
+        )
+        .err(),
+        Some(PearError::CircuitMismatch)
+    );
+
     assert_eq!(
         client.encrypt(&values(&[1, 0, 1]), &mut rng).err(),
         Some(PearError::Flp(FlpError::InputLength {

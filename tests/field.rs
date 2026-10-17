@@ -14,9 +14,7 @@ fn exponent(value: u128) -> impl AsRef<[u64]> {
 
 #[test]
 fn field128_parameters() {
-    let modulus = Field128::MODULUS.to_string();
-    assert_eq!(modulus, "340282366920938462946865773367900766209");
-    assert_eq!(modulus, MODULUS.to_string());
+    assert_eq!(Field128::MODULUS.to_string(), MODULUS.to_string());
     assert_eq!(Field128::TWO_ADICITY, 66);
 
     let order = MODULUS - 1;

@@ -77,9 +77,6 @@ pub(crate) fn is_probable_prime(n: &UBig, rng: &mut (impl CryptoRng + RngCore)) 
             return *n == UBig::from(divisor);
         }
     }
-    if *n < UBig::from(TRIAL_DIVISION_BOUND.pow(2)) {
-        return true;
-    }
     let random_base_bound = n - UBig::from(3u8);
     passes_miller_rabin(n, &UBig::from(2u8))
         && (0..PRIMALITY_ROUNDS).all(|_| {

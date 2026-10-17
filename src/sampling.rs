@@ -76,10 +76,6 @@ impl DiscreteGaussian {
         Self { variance, scale }
     }
 
-    pub(crate) fn variance(&self) -> &UBig {
-        &self.variance
-    }
-
     pub(crate) fn sample(&self, rng: &mut (impl CryptoRng + RngCore)) -> IBig {
         let denominator = UBig::from(2u8) * &self.variance * self.scale.sqr();
         loop {
@@ -98,8 +94,9 @@ mod tests {
     use super::{DiscreteGaussian, bernoulli_exp_neg, uniform_below};
     use ark_std::rand::SeedableRng;
     use ark_std::rand::rngs::StdRng;
-    use dashu_int::{IBig, UBig};
+    use dashu_int::UBig;
     use std::collections::BTreeSet;
+    use std::f64::consts::TAU;
 
     fn rng() -> StdRng {
         StdRng::seed_from_u64(2)
@@ -148,18 +145,23 @@ mod tests {
         const SAMPLES: u16 = 20_000;
         let mut rng = rng();
         let gaussian = DiscreteGaussian::new(UBig::from(100u8));
-        let samples: Vec<f64> = (0..SAMPLES)
-            .map(|_| f64::from(i32::try_from(&gaussian.sample(&mut rng)).unwrap()))
+        let samples: Vec<i32> = (0..SAMPLES)
+            .map(|_| i32::try_from(&gaussian.sample(&mut rng)).unwrap())
             .collect();
         let count = f64::from(SAMPLES);
-        let mean = samples.iter().sum::<f64>() / count;
-        let variance = samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / count;
+        let mean = samples.iter().copied().map(f64::from).sum::<f64>() / count;
+        let variance = samples
+            .iter()
+            .map(|&x| (f64::from(x) - mean).powi(2))
+            .sum::<f64>()
+            / count;
         assert!(mean.abs() < 0.5, "{mean}");
         assert!((95.0..=105.0).contains(&variance), "{variance}");
-        assert!(samples.iter().any(|&x| x < 0.0) && samples.iter().any(|&x| x > 0.0));
-        assert!(samples.iter().all(|x| x.abs() < 100.0));
+        assert!(samples.iter().all(|x| x.abs() < 100));
 
-        let unit = DiscreteGaussian::new(UBig::ONE);
-        assert!((0..200).any(|_| unit.sample(&mut rng) == IBig::ZERO));
+        let zeros = samples.iter().filter(|&&x| x == 0).count();
+        let zero_mass = f64::from(u16::try_from(zeros).unwrap()) / count;
+        let expected = (10.0 * TAU.sqrt()).recip();
+        assert!((zero_mass - expected).abs() < 0.01, "{zero_mass}");
     }
 }

@@ -27,7 +27,7 @@ pub struct Params<F> {
 }
 
 fn is_small_prime(n: u64) -> bool {
-    n >= 2 && (2..=n.isqrt()).all(|divisor| !n.is_multiple_of(divisor))
+    (2..=n.isqrt()).all(|divisor| !n.is_multiple_of(divisor))
 }
 
 fn inverse_mod(value: &IBig, modulus: &IBig) -> IBig {
@@ -122,13 +122,12 @@ impl<F: PrimeField> Params<F> {
         let hsm = HsmGroup::new(p, IBig::from(q));
         let randomness_variance = class_number_bound(&hsm.delta_k).sqr() * SECURITY_BITS;
         let key_variance = &randomness_variance * modulus.sqr();
-        let key = DiscreteGaussian::new(key_variance);
-        let generator_bits = key.variance().sqrt().bit_len() + 8;
+        let generator_bits = key_variance.sqrt().bit_len() + 8;
         Ok(Self {
             generator: FixedBase::new(hsm.group(), hsm.generator(), generator_bits),
             hsm,
             randomness: DiscreteGaussian::new(randomness_variance),
-            key,
+            key: DiscreteGaussian::new(key_variance),
             half: F::from_le_bytes_mod_order(&((modulus + UBig::ONE) >> 1).to_le_bytes()),
             discriminant_bits,
         })

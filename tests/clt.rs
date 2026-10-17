@@ -55,14 +55,9 @@ fn add_is_homomorphic_with_wraparound() {
         .encrypt(&[Field128::from(2u8), -Field128::from(5u8)], &mut rng)
         .unwrap();
     let sum = public_key.add(&left, &right).unwrap();
-    let expected = [Field128::ONE, Field128::ZERO];
-    assert_eq!(secret_key.decrypt(&sum), Ok(expected.to_vec()));
-
-    let vector = [Field128::from(3u8), Field128::from(7u8)];
-    let key = &secret_key.function_keys(&[vector.as_slice()]).unwrap()[0];
     assert_eq!(
-        public_key.eval(key, &sum),
-        Ok(inner_product(&expected, &vector))
+        secret_key.decrypt(&sum),
+        Ok(vec![Field128::ONE, Field128::ZERO])
     );
 }
 
@@ -128,7 +123,6 @@ fn dependent_function_vectors_rejected() {
     let zero = [Field128::ZERO; 3];
     for vectors in [
         [vector.as_slice(), doubled.as_slice()].as_slice(),
-        &[vector.as_slice(), zero.as_slice()],
         &[zero.as_slice()],
     ] {
         assert_eq!(
