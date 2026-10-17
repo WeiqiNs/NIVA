@@ -18,6 +18,10 @@ dashu-int = "0.6"
 rayon = { version = "1.12", optional = true }
 rust_flpcp = { version = "0.1.0", git = "https://github.com/WeiqiNs/RustFLPCP", rev = "4bcc8c0eda6220db56266b79f456813f8d734a23" }
 
+[dev-dependencies]
+criterion = "0.8.2"
+rand = "0.8"
+
 [features]
 parallel = ["dep:rayon", "ark-ff/parallel", "ark-std/parallel", "rust_flpcp/parallel"]
 
@@ -31,3 +35,7 @@ missing_errors_doc = "allow"
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[[bench]]
+name = "pear"
+harness = false
