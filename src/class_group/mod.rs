@@ -2,7 +2,7 @@ mod exp;
 
 pub(crate) use exp::pow;
 
-use dashu_int::ops::{DivRemEuclid, ExtendedGcd, RemEuclid};
+use dashu_int::ops::{DivRem, DivRemEuclid, ExtendedGcd, RemEuclid, SquareRoot, UnsignedAbs};
 use dashu_int::{IBig, UBig};
 use std::mem;
 
@@ -16,6 +16,15 @@ pub(crate) struct Form {
 #[derive(Clone, Debug)]
 pub(crate) struct ClassGroup {
     discriminant: IBig,
+    nucomp_bound: IBig,
+}
+
+struct PartialComposition<'a> {
+    right: &'a Form,
+    common: IBig,
+    left_part: IBig,
+    right_part: IBig,
+    shift: IBig,
 }
 
 impl Form {
@@ -37,11 +46,11 @@ impl Form {
 
 impl ClassGroup {
     pub(crate) fn new(discriminant: IBig) -> Self {
-        Self { discriminant }
-    }
-
-    pub(crate) fn discriminant(&self) -> &IBig {
-        &self.discriminant
+        let nucomp_bound = IBig::from((&discriminant).unsigned_abs().sqrt().sqrt());
+        Self {
+            discriminant,
+            nucomp_bound,
+        }
     }
 
     pub(crate) fn identity(&self) -> Form {
@@ -68,21 +77,74 @@ impl ClassGroup {
     }
 
     pub(crate) fn compose(&self, left: &Form, right: &Form) -> Form {
+        let (left, right) = if left.a < right.a {
+            (right, left)
+        } else {
+            (left, right)
+        };
         let half_sum = (&left.b + &right.b) >> 1;
         let half_difference = &right.b - &half_sum;
         let (divisor, right_coeff, _) = (&right.a).gcd_ext(&left.a);
         let (common, sum_coeff, divisor_coeff) = (&half_sum).gcd_ext(&divisor);
         let common = IBig::from(common);
         let left_part = &left.a / &common;
-        let right_part = &right.a / &common;
         let shift = (-(right_coeff * divisor_coeff * half_difference) - sum_coeff * &right.c)
             .rem_euclid(&left_part);
-        let b = &right.b + ((&right_part * IBig::from(shift)) << 1);
-        self.reduced(left_part * right_part, b)
+        self.finish(PartialComposition {
+            right,
+            right_part: &right.a / &common,
+            common,
+            shift: IBig::from(shift),
+            left_part,
+        })
     }
 
     pub(crate) fn square(&self, form: &Form) -> Form {
-        self.compose(form, form)
+        let (common, b_coeff, _) = (&form.b).gcd_ext(&form.a);
+        let common = IBig::from(common);
+        let part = &form.a / &common;
+        let shift = (-(b_coeff * &form.c)).rem_euclid(&part);
+        self.finish(PartialComposition {
+            right: form,
+            common,
+            left_part: part.clone(),
+            right_part: part,
+            shift: IBig::from(shift),
+        })
+    }
+
+    fn finish(&self, composition: PartialComposition<'_>) -> Form {
+        let PartialComposition {
+            right,
+            common,
+            left_part,
+            right_part,
+            shift,
+        } = composition;
+        let (mut far, mut far_coeff) = (left_part.clone(), IBig::ZERO);
+        let (mut near, mut near_coeff) = (shift, IBig::ONE);
+        let mut odd = false;
+        while near > self.nucomp_bound {
+            let (quotient, remainder) = (&far).div_rem(&near);
+            let next_coeff = &far_coeff - &quotient * &near_coeff;
+            (far, near) = (near, remainder);
+            (far_coeff, near_coeff) = (near_coeff, next_coeff);
+            odd = !odd;
+        }
+
+        let scaled_c = &common * &right.c;
+        let norm = |value: &IBig, coeff: &IBig| {
+            (&right_part * value.sqr() + &right.b * value * coeff + &scaled_c * coeff.sqr())
+                / &left_part
+        };
+        let trace = ((&right_part * &far * &near + &scaled_c * &far_coeff * &near_coeff) << 1)
+            + &right.b * (&far * &near_coeff + &near * &far_coeff);
+        let b = trace / &left_part;
+        reduce(Form {
+            a: norm(&far, &far_coeff),
+            b: if odd { -b } else { b },
+            c: norm(&near, &near_coeff),
+        })
     }
 }
 
@@ -123,14 +185,14 @@ pub(crate) mod tests {
     use crate::sampling::uniform_below;
     use ark_std::rand::rngs::StdRng;
     use ark_std::rand::{RngCore, SeedableRng};
-    use dashu_int::ops::{BitTest, Gcd, UnsignedAbs};
+    use dashu_int::ops::{BitTest, ExtendedGcd, Gcd, RemEuclid, UnsignedAbs};
     use dashu_int::{IBig, UBig};
     use std::collections::BTreeSet;
 
     pub(crate) fn is_canonical(form: &Form, group: &ClassGroup) -> bool {
         let Form { a, b, c } = form;
         let ambiguous = b.unsigned_abs() == a.unsigned_abs() || a == c;
-        b.sqr() - ((a * c) << 2) == *group.discriminant()
+        b.sqr() - ((a * c) << 2) == group.discriminant
             && *a > IBig::ZERO
             && b.unsigned_abs() <= a.unsigned_abs()
             && a <= c
@@ -190,6 +252,20 @@ pub(crate) mod tests {
         let group = ClassGroup::new(-IBig::from(candidate));
         let base = (2..).find_map(|prime| group.prime_form(prime)).unwrap();
         (group, base)
+    }
+
+    fn compose_reference(group: &ClassGroup, left: &Form, right: &Form) -> Form {
+        let half_sum = (&left.b + &right.b) >> 1;
+        let half_difference = &right.b - &half_sum;
+        let (divisor, right_coeff, _) = (&right.a).gcd_ext(&left.a);
+        let (common, sum_coeff, divisor_coeff) = (&half_sum).gcd_ext(&divisor);
+        let common = IBig::from(common);
+        let left_part = &left.a / &common;
+        let right_part = &right.a / &common;
+        let shift = (-(right_coeff * divisor_coeff * half_difference) - sum_coeff * &right.c)
+            .rem_euclid(&left_part);
+        let b = &right.b + ((&right_part * IBig::from(shift)) << 1);
+        group.reduced(left_part * right_part, b)
     }
 
     #[test]
@@ -281,6 +357,20 @@ pub(crate) mod tests {
             for power in [&power_a, &power_b, &power_sum] {
                 assert!(is_canonical(power, &group));
             }
+        }
+    }
+
+    #[test]
+    fn nucomp_matches_reference_composition() {
+        let mut rng = rng();
+        let (group, base) = large_group(&mut rng);
+        for _ in 0..200 {
+            let left = pow(&group, &base, &signed_below(64, &mut rng));
+            let right = pow(&group, &base, &signed_below(64, &mut rng));
+            let product = group.compose(&left, &right);
+            assert_eq!(product, compose_reference(&group, &left, &right));
+            assert_eq!(group.square(&left), compose_reference(&group, &left, &left));
+            assert!(is_canonical(&product, &group));
         }
     }
 }

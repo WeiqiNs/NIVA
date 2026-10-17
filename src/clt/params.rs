@@ -261,8 +261,12 @@ pub(crate) mod tests {
             assert_eq!(kronecker(&p, &q), -1);
             assert!(q > &p << 2);
             assert_eq!(hsm.delta_k.bit_len(), bits as usize);
-            assert_eq!(*hsm.group().discriminant(), p.sqr() * &hsm.delta_k);
-            assert!(!params.generator.is_identity());
+            let generator = &params.generator;
+            assert_eq!(
+                generator.b.sqr() - ((&generator.a * &generator.c) << 2),
+                p.sqr() * &hsm.delta_k
+            );
+            assert!(!generator.is_identity());
             assert!(is_canonical(&params.generator, hsm.group()));
 
             let random = Field128::rand(&mut rng);
