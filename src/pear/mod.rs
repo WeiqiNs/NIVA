@@ -1,4 +1,4 @@
-use crate::clt::{self, Ciphertext, FunctionKey, MasterSecretKey, Params, PublicKey};
+use crate::clt::{self, Ciphertext, DecryptionKey, FunctionKey, Params, PublicKey};
 use crate::error::PearError;
 use ark_ff::PrimeField;
 use ark_std::cfg_iter;
@@ -6,11 +6,12 @@ use ark_std::rand::{CryptoRng, RngCore};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use rust_flpcp::{Circuit, Flp, Query};
+use std::fmt;
 use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct Analyst<F> {
-    secret: MasterSecretKey<F>,
+    secret: DecryptionKey<F>,
 }
 
 #[derive(Debug)]
@@ -20,7 +21,7 @@ pub struct Setup<F> {
     pub verification_key: VerificationKey<F>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct VerificationKey<F> {
     query: Query<F>,
     function_keys: Vec<FunctionKey<F>>,
@@ -43,6 +44,15 @@ pub struct Server<F: PrimeField, C> {
 
 #[derive(Clone, Debug)]
 pub struct Contribution<F>(Ciphertext<F>);
+
+impl<F> fmt::Debug for VerificationKey<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VerificationKey")
+            .field("queries", &self.function_keys.len())
+            .field("payload_len", &self.payload_len)
+            .finish_non_exhaustive()
+    }
+}
 
 #[cfg(feature = "parallel")]
 fn tree_reduce<T: Send>(items: Vec<T>, combine: impl Fn(T, T) -> T + Send + Sync) -> Option<T> {
@@ -76,10 +86,10 @@ impl<F: PrimeField> Analyst<F> {
             .iter()
             .map(|linear| linear.coeffs.as_slice())
             .collect();
-        let function_keys = secret_key.function_keys(&vectors)?;
+        let (function_keys, decryption_key) = secret_key.function_keys(&vectors)?;
         Ok(Setup {
             analyst: Self {
-                secret: secret_key.prefix(payload_len)?,
+                secret: decryption_key.prefix(payload_len)?,
             },
             public_key,
             verification_key: VerificationKey {
@@ -124,6 +134,10 @@ impl<F: PrimeField, C: Circuit<F>> Server<F, C> {
         let flp = Flp::new(circuit)?;
         if public_key.dimension() != flp.vector_len()
             || verification_key.function_keys.len() != flp.query_count()
+            || verification_key
+                .function_keys
+                .iter()
+                .any(|key| key.dimension() != flp.vector_len())
             || verification_key.payload_len > input_len
         {
             return Err(PearError::CircuitMismatch);

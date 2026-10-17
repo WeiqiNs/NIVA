@@ -29,7 +29,12 @@ pub struct MasterSecretKey<F> {
     exponents: Vec<IBig>,
 }
 
-#[derive(Clone, Debug)]
+pub struct DecryptionKey<F> {
+    params: Arc<Params<F>>,
+    exponents: Vec<IBig>,
+}
+
+#[derive(Clone)]
 pub struct FunctionKey<F> {
     coeffs: Vec<IBig>,
     secret: IBig,
@@ -55,6 +60,12 @@ fn check_prefix(len: usize, dimension: usize) -> Result<(), CltError> {
         return Err(CltError::PrefixTooLong { len, dimension });
     }
     Ok(())
+}
+
+fn redacted(f: &mut fmt::Formatter<'_>, name: &str, dimension: usize) -> fmt::Result {
+    f.debug_struct(name)
+        .field("dimension", &dimension)
+        .finish_non_exhaustive()
 }
 
 fn linearly_independent<F: Field>(vectors: &[&[F]]) -> bool {
@@ -186,14 +197,17 @@ impl<F: PrimeField> MasterSecretKey<F> {
         self.exponents.len()
     }
 
-    pub fn function_keys(&self, vectors: &[&[F]]) -> Result<Vec<FunctionKey<F>>, CltError> {
+    pub fn function_keys(
+        self,
+        vectors: &[&[F]],
+    ) -> Result<(Vec<FunctionKey<F>>, DecryptionKey<F>), CltError> {
         for vector in vectors {
             check_dimension(self.dimension(), vector.len())?;
         }
         if !linearly_independent(vectors) {
             return Err(CltError::DependentFunctionVectors);
         }
-        Ok(vectors
+        let keys = vectors
             .iter()
             .map(|vector| {
                 let coeffs: Vec<IBig> = vector.iter().map(|&value| Params::lift(value)).collect();
@@ -208,7 +222,19 @@ impl<F: PrimeField> MasterSecretKey<F> {
                     _field: PhantomData,
                 }
             })
-            .collect())
+            .collect();
+        let decryption_key = DecryptionKey {
+            params: self.params,
+            exponents: self.exponents,
+        };
+        Ok((keys, decryption_key))
+    }
+}
+
+impl<F: PrimeField> DecryptionKey<F> {
+    #[must_use]
+    pub fn dimension(&self) -> usize {
+        self.exponents.len()
     }
 
     pub fn decrypt(&self, ciphertext: &Ciphertext<F>) -> Result<Vec<F>, CltError> {
@@ -241,9 +267,26 @@ impl<F: PrimeField> MasterSecretKey<F> {
 
 impl<F> fmt::Debug for MasterSecretKey<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MasterSecretKey")
-            .field("dimension", &self.exponents.len())
-            .finish_non_exhaustive()
+        redacted(f, "MasterSecretKey", self.exponents.len())
+    }
+}
+
+impl<F> fmt::Debug for DecryptionKey<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        redacted(f, "DecryptionKey", self.exponents.len())
+    }
+}
+
+impl<F> FunctionKey<F> {
+    #[must_use]
+    pub fn dimension(&self) -> usize {
+        self.coeffs.len()
+    }
+}
+
+impl<F> fmt::Debug for FunctionKey<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        redacted(f, "FunctionKey", self.coeffs.len())
     }
 }
 
@@ -290,7 +333,8 @@ pub(crate) mod tests {
         );
         let message = message(16);
         let ciphertext = public_key.encrypt(&message, &mut rng()).unwrap();
-        assert_eq!(secret_key.decrypt(&ciphertext), Ok(message));
+        let (_, decryption_key) = secret_key.function_keys(&[]).unwrap();
+        assert_eq!(decryption_key.decrypt(&ciphertext), Ok(message));
     }
 
     #[test]
@@ -311,12 +355,12 @@ pub(crate) mod tests {
         tampered.coords[0] = group.compose(&tampered.coords[0], &torsion);
         assert_ne!(tampered, ciphertext);
 
-        let key = &secret_key.function_keys(&[message.as_slice()]).unwrap()[0];
+        let (keys, decryption_key) = secret_key.function_keys(&[message.as_slice()]).unwrap();
         assert_eq!(
-            public_key.eval(key, &tampered),
-            public_key.eval(key, &ciphertext)
+            public_key.eval(&keys[0], &tampered),
+            public_key.eval(&keys[0], &ciphertext)
         );
-        assert_eq!(secret_key.decrypt(&tampered), Ok(message));
+        assert_eq!(decryption_key.decrypt(&tampered), Ok(message));
     }
 
     pub(crate) fn shift_randomness(
@@ -337,23 +381,33 @@ pub(crate) mod tests {
         let ciphertext = public_key.encrypt(&message(3), &mut rng()).unwrap();
         let ciphertext = shift_randomness(&public_key, ciphertext);
         let vector = message(3);
-        let key = &secret_key.function_keys(&[vector.as_slice()]).unwrap()[0];
+        let (keys, decryption_key) = secret_key.function_keys(&[vector.as_slice()]).unwrap();
         assert_eq!(
-            public_key.eval(key, &ciphertext),
+            public_key.eval(&keys[0], &ciphertext),
             Err(CltError::NotInSubgroup)
         );
         assert_eq!(
-            secret_key.decrypt(&ciphertext),
+            decryption_key.decrypt(&ciphertext),
             Err(CltError::NotInSubgroup)
         );
     }
 
     #[test]
-    fn master_secret_key_debug_is_redacted() {
+    fn secret_debug_output_is_redacted() {
         let (_, secret_key) = keys(16);
         assert_eq!(
             format!("{secret_key:?}"),
             "MasterSecretKey { dimension: 16, .. }"
+        );
+        let vector = message(16);
+        let (keys, decryption_key) = secret_key.function_keys(&[vector.as_slice()]).unwrap();
+        assert_eq!(
+            format!("{decryption_key:?}"),
+            "DecryptionKey { dimension: 16, .. }"
+        );
+        assert_eq!(
+            format!("{:?}", keys[0]),
+            "FunctionKey { dimension: 16, .. }"
         );
     }
 }

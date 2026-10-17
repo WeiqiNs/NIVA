@@ -23,7 +23,6 @@ fn decrypt_and_eval_recover_plaintext_and_inner_products() {
         -Field128::from(2u8),
     ];
     let ciphertext = public_key.encrypt(&message, &mut rng).unwrap();
-    assert_eq!(secret_key.decrypt(&ciphertext), Ok(message.to_vec()));
 
     let unit = [
         Field128::ONE,
@@ -35,7 +34,8 @@ fn decrypt_and_eval_recover_plaintext_and_inner_products() {
     let negated = [-Field128::ONE; 5];
     let random: Vec<Field128> = (0..5).map(|_| Field128::rand(&mut rng)).collect();
     let vectors = [unit.as_slice(), negated.as_slice(), random.as_slice()];
-    let keys = secret_key.function_keys(&vectors).unwrap();
+    let (keys, decryption_key) = secret_key.function_keys(&vectors).unwrap();
+    assert_eq!(decryption_key.decrypt(&ciphertext), Ok(message.to_vec()));
     for (key, vector) in keys.iter().zip(vectors) {
         assert_eq!(
             public_key.eval(key, &ciphertext),
@@ -55,8 +55,9 @@ fn add_is_homomorphic_with_wraparound() {
         .encrypt(&[Field128::from(2u8), -Field128::from(5u8)], &mut rng)
         .unwrap();
     let sum = public_key.add(&left, &right).unwrap();
+    let (_, decryption_key) = secret_key.function_keys(&[]).unwrap();
     assert_eq!(
-        secret_key.decrypt(&sum),
+        decryption_key.decrypt(&sum),
         Ok(vec![Field128::ONE, Field128::ZERO])
     );
 }
@@ -68,7 +69,8 @@ fn prefix_restricts_keys_and_ciphertexts() {
     let message: Vec<Field128> = (1..=5u8).map(Field128::from).collect();
     let ciphertext = public_key.encrypt(&message, &mut rng).unwrap();
 
-    let short_secret = secret_key.prefix(2).unwrap();
+    let (_, decryption_key) = secret_key.function_keys(&[]).unwrap();
+    let short_secret = decryption_key.prefix(2).unwrap();
     assert_eq!(
         short_secret.decrypt(&ciphertext.clone().prefix(2).unwrap()),
         Ok(message[..2].to_vec())
@@ -85,7 +87,7 @@ fn prefix_restricts_keys_and_ciphertexts() {
         dimension: 5,
     });
     assert_eq!(public_key.prefix(6).err(), too_long);
-    assert_eq!(secret_key.prefix(6).err(), too_long);
+    assert_eq!(decryption_key.prefix(6).err(), too_long);
     assert_eq!(ciphertext.prefix(6).err(), too_long);
 }
 
@@ -104,20 +106,20 @@ fn dimension_mismatches_are_errors() {
         .unwrap()
         .encrypt(&message[..2], &mut rng)
         .unwrap();
-    let key = &secret_key.function_keys(&[message.as_slice()]).unwrap()[0];
+    let (keys, decryption_key) = secret_key.function_keys(&[message.as_slice()]).unwrap();
 
     assert_eq!(public_key.encrypt(&message[..2], &mut rng).err(), mismatch);
+    let (_, other_secret_key) = clt::setup(&params(), 3, &mut rng);
     let vectors = [message.as_slice(), &message[..2]];
-    assert_eq!(secret_key.function_keys(&vectors).err(), mismatch);
-    assert_eq!(public_key.eval(key, &short).err(), mismatch);
+    assert_eq!(other_secret_key.function_keys(&vectors).err(), mismatch);
+    assert_eq!(public_key.eval(&keys[0], &short).err(), mismatch);
     assert_eq!(public_key.add(&ciphertext, &short).err(), mismatch);
-    assert_eq!(secret_key.decrypt(&short).err(), mismatch);
+    assert_eq!(decryption_key.decrypt(&short).err(), mismatch);
 }
 
 #[test]
 fn dependent_function_vectors_rejected() {
     let mut rng = rng();
-    let (_, secret_key) = clt::setup(&params(), 3, &mut rng);
     let vector: Vec<Field128> = (0..3).map(|_| Field128::rand(&mut rng)).collect();
     let doubled: Vec<Field128> = vector.iter().map(Field128::double).collect();
     let zero = [Field128::ZERO; 3];
@@ -125,6 +127,7 @@ fn dependent_function_vectors_rejected() {
         [vector.as_slice(), doubled.as_slice()].as_slice(),
         &[zero.as_slice()],
     ] {
+        let (_, secret_key) = clt::setup(&params(), 3, &mut rng);
         assert_eq!(
             secret_key.function_keys(vectors).err(),
             Some(CltError::DependentFunctionVectors)
@@ -167,11 +170,11 @@ fn full_size_round_trip() {
     let (public_key, secret_key) = clt::setup(&params, 3, &mut rng);
     let message = [Field128::from(7u8), -Field128::ONE, Field128::ZERO];
     let ciphertext = public_key.encrypt(&message, &mut rng).unwrap();
-    assert_eq!(secret_key.decrypt(&ciphertext), Ok(message.to_vec()));
     let vector = [Field128::ONE, Field128::from(2u8), Field128::from(3u8)];
-    let key = &secret_key.function_keys(&[vector.as_slice()]).unwrap()[0];
+    let (keys, decryption_key) = secret_key.function_keys(&[vector.as_slice()]).unwrap();
+    assert_eq!(decryption_key.decrypt(&ciphertext), Ok(message.to_vec()));
     assert_eq!(
-        public_key.eval(key, &ciphertext),
+        public_key.eval(&keys[0], &ciphertext),
         Ok(inner_product(&message, &vector))
     );
 }

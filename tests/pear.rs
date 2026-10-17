@@ -1,8 +1,8 @@
 mod common;
 
 use ark_ff::{AdditiveGroup, Field};
-use common::{params, rng};
-use niva::clt::{Ciphertext, PublicKey};
+use common::{TEST_DISCRIMINANT_BITS, params, rng};
+use niva::clt::{Ciphertext, Params, PublicKey};
 use niva::pear::{Analyst, Client, Contribution, Server, Setup};
 use niva::{CltError, Field128, PearError};
 use rust_flpcp::{Circuit, Flp, FlpError, MeanVariance, NormBound, Range};
@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::Debug;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 struct Case<C> {
     circuit: C,
@@ -147,7 +148,8 @@ fn server_rejects_foreign_ciphertexts() {
     let short = ciphertext.clone().prefix(4).unwrap();
     assert!(server.validate(short).is_none());
 
-    let foreign_setup = Analyst::setup(&params(), circuit.clone(), 4, &mut rng).unwrap();
+    let foreign_params = Arc::new(Params::generate(TEST_DISCRIMINANT_BITS + 10, &mut rng).unwrap());
+    let foreign_setup = Analyst::setup(&foreign_params, circuit.clone(), 4, &mut rng).unwrap();
     let foreign_client = Client::new(circuit, foreign_setup.public_key).unwrap();
     let foreign = foreign_client.encrypt(&input, &mut rng).unwrap();
     assert!(server.validate(foreign).is_none());
@@ -191,6 +193,19 @@ fn setup_errors() {
             shorter_input,
             public_key.clone(),
             setup.verification_key.clone()
+        )
+        .err(),
+        Some(PearError::CircuitMismatch)
+    );
+
+    let (wider_setup, _, _) = roles(&Range::binary(8), 4);
+    assert_eq!(shape(Range::binary(8)).1, shape(Range::binary(4)).1);
+    assert_ne!(shape(Range::binary(8)).0, shape(Range::binary(4)).0);
+    assert_eq!(
+        Server::new(
+            Range::binary(4),
+            public_key.clone(),
+            wider_setup.verification_key
         )
         .err(),
         Some(PearError::CircuitMismatch)
@@ -271,10 +286,20 @@ fn error_messages_are_distinct_lowercase_sentences() {
 }
 
 #[test]
+fn verification_key_debug_is_redacted() {
+    let (setup, _, _) = roles(&Range::binary(4), 3);
+    assert_eq!(
+        format!("{:?}", setup.verification_key),
+        "VerificationKey { queries: 2, payload_len: 3, .. }"
+    );
+}
+
+#[test]
 fn protocol_types_are_thread_safe() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<PublicKey<Field128>>();
     assert_send_sync::<niva::clt::MasterSecretKey<Field128>>();
+    assert_send_sync::<niva::clt::DecryptionKey<Field128>>();
     assert_send_sync::<niva::clt::FunctionKey<Field128>>();
     assert_send_sync::<Ciphertext<Field128>>();
     assert_send_sync::<Analyst<Field128>>();

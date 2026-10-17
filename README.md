@@ -60,6 +60,8 @@ Run `cargo run --example costs` for each rule's ciphertext size and query count.
   reusable strong honest-verifier zero knowledge).
 - The server learns the queries, so integrity holds only against clients that do not collude with the server. The
   analyst must keep its decryption key to itself.
+- Function keys come from one batch: `clt::MasterSecretKey::function_keys` consumes the master key and returns a
+  decryption key that cannot issue more, because keys from separate batches could combine into an unauthorised one.
 - Secret exponents are not handled in constant time.
 
 ## Using it
