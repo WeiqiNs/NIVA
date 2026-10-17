@@ -713,6 +713,7 @@ name = "niva"
 version = "0.1.0"
 dependencies = [
  "ark-ff",
+ "ark-poly",
  "ark-std",
  "criterion",
  "dashu-int",

@@ -13,6 +13,12 @@ pub enum CltError {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+pub enum LatticeError {
+    RingDimension { dimension: usize },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum PearError {
     Clt(CltError),
     Flp(FlpError),
@@ -50,6 +56,19 @@ impl fmt::Display for CltError {
 }
 
 impl std::error::Error for CltError {}
+
+impl fmt::Display for LatticeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RingDimension { dimension } => write!(
+                f,
+                "ring dimension {dimension} is not a supported power of two"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LatticeError {}
 
 impl fmt::Display for PearError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

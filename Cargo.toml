@@ -13,6 +13,7 @@ publish = false
 
 [dependencies]
 ark-ff = "0.6.0"
+ark-poly = "0.6.0"
 ark-std = "0.6.0"
 dashu-int = "0.6"
 rayon = { version = "1.12", optional = true }
@@ -23,11 +24,12 @@ criterion = "0.8.2"
 rand = "0.8"
 
 [features]
-parallel = ["dep:rayon", "ark-ff/parallel", "ark-std/parallel", "rust_flpcp/parallel"]
+parallel = ["dep:rayon", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "rust_flpcp/parallel"]
 
 [lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("asm"))'] }
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
