@@ -1,0 +1,26 @@
+[package]
+name = "niva"
+version = "0.1.0"
+edition = "2024"
+description = "Non-interactive verifiable aggregation (PEAR): inner-product functional encryption over class groups with fully linear PCPs"
+license = "Apache-2.0"
+repository = "https://github.com/WeiqiNs/NIVA"
+readme = "README.md"
+keywords = ["zero-knowledge", "encryption", "class-groups", "aggregation", "cryptography"]
+categories = ["cryptography"]
+exclude = [".github", "codecov.yml", "deny.toml", "CLAUDE.md"]
+publish = false
+
+[dependencies]
+ark-ff = "0.6.0"
+
+[features]
+parallel = ["ark-ff/parallel"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
