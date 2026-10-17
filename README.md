@@ -53,6 +53,22 @@ This is `examples/quickstart.rs`.
 
 Run `cargo run --example costs` for each rule's ciphertext size and query count.
 
+## Backends
+
+The protocol is generic over the `Ipfe` trait, and the backend follows from the parameters passed to
+`Analyst::setup`:
+
+- `clt::Params` (the default): the class-group scheme above, the one the paper's security proof covers.
+- `lattice::Params`: a research-grade RLWE scheme after
+  [Bermudo Mera, Karmakar, Marc and Soleimanian (PKC 2022)](https://eprint.iacr.org/2021/046), adapted to inner
+  products modulo the field's prime, with ring dimension 16384 and a 278-bit modulus. It is here for speed
+  comparisons: its parameters come from the lattice estimator, so its security is heuristic.
+
+```rust
+let params = Arc::new(lattice::Params::<Field128>::new(Field128::RING_DIMENSION)?);
+let setup = Analyst::setup(&params, circuit.clone(), 4, rng)?;
+```
+
 ## Security notes
 
 - Pass a cryptographically secure generator (`rand` 0.8, such as `OsRng`).
@@ -60,9 +76,14 @@ Run `cargo run --example costs` for each rule's ciphertext size and query count.
   reusable strong honest-verifier zero knowledge).
 - The server learns the queries, so integrity holds only against clients that do not collude with the server. The
   analyst must keep its decryption key to itself.
-- Function keys come from one batch: `clt::MasterSecretKey::function_keys` consumes the master key and returns a
-  decryption key that cannot issue more, because keys from separate batches could combine into an unauthorised one.
+- Function keys come from one batch: in both backends `MasterSecretKey::function_keys` consumes the master key and
+  returns a decryption key that cannot issue more, because keys from separate batches could combine into an
+  unauthorised one.
 - Secret exponents are not handled in constant time.
+- The lattice backend's privacy is heuristic, with no reduction to PEAR's privacy game. Its integrity assumes clients
+  encrypt honestly: a client can add noise to its own ciphertext and learn from the server's verdict about the
+  reused query (a key-reuse reaction attack). Decoding rejects noise above a quarter of the headroom modulus, which
+  narrows this channel but does not close it.
 
 ## Using it
 
@@ -80,18 +101,25 @@ validation and aggregation over threads. Everything is pure Rust; no C toolchain
 ## Benchmarks
 
 `cargo bench --bench pear --features parallel` on an AMD Ryzen 7 9800X3D (8 cores, 16 threads), with
-128-bit security (`DISCRIMINANT_BITS`). `binary` is `Range::binary(len)`; `norm_bound` is
-`NormBound { len, input_bits: 10, norm_bits: 20, .. }`, the paper's setting. Proving takes under a millisecond;
-encryption dominates the client because it costs one class-group exponentiation per vector coordinate.
+128-bit security (`DISCRIMINANT_BITS`) for CLT and ring dimension 16384 for the lattice backend. `binary` is
+`Range::binary(len)`; `norm_bound` is `NormBound { len, input_bits: 10, norm_bits: 20, .. }`, the paper's setting.
+Proving takes under a millisecond; with CLT, encryption dominates the client because it costs one class-group
+exponentiation per vector coordinate.
 
-| rule | len | client encrypt | server validate | aggregate 2 | analyst decrypt |
-|---|---|---|---|---|---|
-| binary | 10 | 0.22 s | 0.08 s | 0.08 s | 0.06 s |
-| binary | 100 | 1.68 s | 0.17 s | 0.51 s | 0.13 s |
-| norm_bound | 10 | 3.05 s | 0.26 s | 0.08 s | 0.06 s |
-| norm_bound | 100 | 24.7 s | 0.91 s | 0.51 s | 0.14 s |
+| backend | rule | len | client encrypt | server validate | aggregate 2 | analyst decrypt |
+|---|---|---|---|---|---|---|
+| clt | binary | 10 | 0.22 s | 0.08 s | 0.08 s | 0.06 s |
+| clt | binary | 100 | 1.68 s | 0.17 s | 0.51 s | 0.13 s |
+| clt | norm_bound | 10 | 3.05 s | 0.26 s | 0.08 s | 0.06 s |
+| clt | norm_bound | 100 | 24.7 s | 0.91 s | 0.51 s | 0.14 s |
+| lattice | binary | 10 | 4.4 ms | 0.26 ms | 4.0 ms | 0.41 ms |
+| lattice | binary | 100 | 12.5 ms | 0.27 ms | 6.3 ms | 2.8 ms |
+| lattice | norm_bound | 10 | 20.1 ms | 0.28 ms | 4.0 ms | 0.41 ms |
+| lattice | norm_bound | 100 | 134 ms | 0.36 ms | 6.0 ms | 2.8 ms |
 
-On one thread (without `parallel`), `binary` at length 100 takes 16.5 s to encrypt and 0.50 s to validate.
+On one thread (without `parallel`), `binary` at length 100 takes 16.5 s to encrypt and 0.50 s to validate with CLT,
+and 110 ms and 0.52 ms with the lattice backend. The lattice backend pays in size instead: its ciphertexts are about
+0.6 MB and its public key grows by 569 KB per vector coordinate, to 3 GB for `norm_bound` at length 100.
 
 ## Build and test
 
