@@ -25,7 +25,6 @@ pub(crate) fn uniform_below(bound: &UBig, rng: &mut (impl CryptoRng + RngCore)) 
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn centered_binomial(rng: &mut (impl CryptoRng + RngCore)) -> i64 {
     let mask = (1u64 << NOISE_ETA) - 1;
     let bits = rng.next_u64();

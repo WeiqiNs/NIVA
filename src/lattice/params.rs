@@ -1,9 +1,13 @@
 use super::ring::Ring;
 use crate::Field128;
 use crate::error::LatticeError;
+use crate::sampling::centered_binomial;
 use ark_ff::fields::{Fp192, MontBackend, MontConfig};
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::{AdditiveGroup, BigInteger, PrimeField, UniformRand};
+use ark_std::rand::{CryptoRng, RngCore};
 use std::fmt;
+use std::iter::Sum;
+use std::ops::{Add, Mul, Sub};
 
 pub trait LatticeField: PrimeField + private::Sealed {
     type Headroom: PrimeField;
@@ -17,13 +21,24 @@ pub struct Headroom150Config;
 
 pub type Headroom150 = Fp192<MontBackend<Headroom150Config, 3>>;
 
-#[allow(dead_code)]
 pub struct Params<F: LatticeField> {
     field_ring: Ring<F>,
     headroom_ring: Ring<F::Headroom>,
     delta: F,
     delta_inverse: F,
     noise_ceiling: <F::Headroom as PrimeField>::BigInt,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Polynomial<F: LatticeField> {
+    field: Vec<F>,
+    headroom: Vec<F::Headroom>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Residue<F: LatticeField> {
+    pub(crate) field: F,
+    pub(crate) headroom: F::Headroom,
 }
 
 mod private {
@@ -35,6 +50,19 @@ impl private::Sealed for Field128 {}
 impl LatticeField for Field128 {
     type Headroom = Headroom150;
     const RING_DIMENSION: usize = 16384;
+}
+
+fn pointwise<K: Copy>(left: &[K], right: &[K], operation: impl Fn(K, K) -> K) -> Vec<K> {
+    left.iter()
+        .zip(right)
+        .map(|(&a, &b)| operation(a, b))
+        .collect()
+}
+
+fn accumulate<K: PrimeField>(sum: &mut [K], coefficient: K, values: &[K]) {
+    for (entry, &value) in sum.iter_mut().zip(values) {
+        *entry += coefficient * value;
+    }
 }
 
 impl<F: LatticeField> Params<F> {
@@ -65,6 +93,167 @@ impl<F: LatticeField> Params<F> {
     #[must_use]
     pub fn ring_dimension(&self) -> usize {
         self.field_ring.dimension()
+    }
+
+    pub(crate) fn sample_coefficients(&self, rng: &mut (impl CryptoRng + RngCore)) -> Vec<i64> {
+        (0..self.ring_dimension())
+            .map(|_| centered_binomial(rng))
+            .collect()
+    }
+
+    pub(crate) fn sample_uniform(&self, rng: &mut (impl CryptoRng + RngCore)) -> Polynomial<F> {
+        let dimension = self.ring_dimension();
+        Polynomial {
+            field: (0..dimension).map(|_| F::rand(rng)).collect(),
+            headroom: (0..dimension).map(|_| F::Headroom::rand(rng)).collect(),
+        }
+    }
+
+    pub(crate) fn forward(&self, coefficients: &[i64]) -> Polynomial<F> {
+        Polynomial {
+            field: self.field_ring.forward(coefficients),
+            headroom: self.headroom_ring.forward(coefficients),
+        }
+    }
+
+    pub(crate) fn constant_term(&self, left: &Polynomial<F>, right: &Polynomial<F>) -> Residue<F> {
+        Residue {
+            field: self.field_ring.constant_term(&left.field, &right.field),
+            headroom: self
+                .headroom_ring
+                .constant_term(&left.headroom, &right.headroom),
+        }
+    }
+
+    pub(crate) fn linear_combination(
+        &self,
+        coefficients: &[Residue<F>],
+        polynomials: &[Polynomial<F>],
+    ) -> Polynomial<F> {
+        let dimension = self.ring_dimension();
+        let mut sum = Polynomial {
+            field: vec![F::ZERO; dimension],
+            headroom: vec![F::Headroom::ZERO; dimension],
+        };
+        for (coefficient, polynomial) in coefficients.iter().zip(polynomials) {
+            accumulate(&mut sum.field, coefficient.field, &polynomial.field);
+            accumulate(
+                &mut sum.headroom,
+                coefficient.headroom,
+                &polynomial.headroom,
+            );
+        }
+        sum
+    }
+
+    pub(crate) fn encode(&self, message: F) -> Residue<F> {
+        Residue {
+            field: message * self.delta,
+            headroom: F::Headroom::ZERO,
+        }
+    }
+
+    pub(crate) fn decode(&self, value: Residue<F>) -> Result<F, LatticeError> {
+        Ok((value.field - self.noise(value.headroom)?) * self.delta_inverse)
+    }
+
+    fn noise(&self, headroom: F::Headroom) -> Result<F, LatticeError> {
+        let magnitude = |value: <F::Headroom as PrimeField>::BigInt| {
+            F::from_le_bytes_mod_order(&value.to_bytes_le())
+        };
+        let positive = headroom.into_bigint();
+        if positive <= self.noise_ceiling {
+            return Ok(magnitude(positive));
+        }
+        let negative = (-headroom).into_bigint();
+        if negative <= self.noise_ceiling {
+            return Ok(-magnitude(negative));
+        }
+        Err(LatticeError::NoiseTooLarge)
+    }
+}
+
+impl<F: LatticeField> Residue<F> {
+    pub(crate) fn small(value: i64) -> Self {
+        Self {
+            field: F::from(value),
+            headroom: F::Headroom::from(value),
+        }
+    }
+
+    pub(crate) fn lift(value: F) -> Self {
+        let magnitude =
+            |value: F| F::Headroom::from_le_bytes_mod_order(&value.into_bigint().to_bytes_le());
+        let headroom = if value.into_bigint() <= F::MODULUS_MINUS_ONE_DIV_TWO {
+            magnitude(value)
+        } else {
+            -magnitude(-value)
+        };
+        Self {
+            field: value,
+            headroom,
+        }
+    }
+}
+
+impl<F: LatticeField> Add for Residue<F> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            field: self.field + other.field,
+            headroom: self.headroom + other.headroom,
+        }
+    }
+}
+
+impl<F: LatticeField> Sub for Residue<F> {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        Self {
+            field: self.field - other.field,
+            headroom: self.headroom - other.headroom,
+        }
+    }
+}
+
+impl<F: LatticeField> Mul for Residue<F> {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self {
+        Self {
+            field: self.field * other.field,
+            headroom: self.headroom * other.headroom,
+        }
+    }
+}
+
+impl<F: LatticeField> Sum for Residue<F> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::small(0), Add::add)
+    }
+}
+
+impl<F: LatticeField> Add for &Polynomial<F> {
+    type Output = Polynomial<F>;
+
+    fn add(self, other: Self) -> Polynomial<F> {
+        Polynomial {
+            field: pointwise(&self.field, &other.field, Add::add),
+            headroom: pointwise(&self.headroom, &other.headroom, Add::add),
+        }
+    }
+}
+
+impl<F: LatticeField> Mul for &Polynomial<F> {
+    type Output = Polynomial<F>;
+
+    fn mul(self, other: Self) -> Polynomial<F> {
+        Polynomial {
+            field: pointwise(&self.field, &other.field, Mul::mul),
+            headroom: pointwise(&self.headroom, &other.headroom, Mul::mul),
+        }
     }
 }
 

@@ -15,6 +15,11 @@ pub enum CltError {
 #[non_exhaustive]
 pub enum LatticeError {
     RingDimension { dimension: usize },
+    DimensionTooLarge { dimension: usize, maximum: usize },
+    DimensionMismatch { expected: usize, actual: usize },
+    PrefixTooLong { len: usize, dimension: usize },
+    DependentFunctionVectors,
+    NoiseTooLarge,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -64,6 +69,22 @@ impl fmt::Display for LatticeError {
                 f,
                 "ring dimension {dimension} is not a supported power of two"
             ),
+            Self::DimensionTooLarge { dimension, maximum } => {
+                write!(f, "dimension {dimension} exceeds the maximum of {maximum}")
+            }
+            Self::DimensionMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "vector has dimension {actual} but the key expects {expected}"
+                )
+            }
+            Self::PrefixTooLong { len, dimension } => {
+                write!(f, "prefix of {len} exceeds the dimension {dimension}")
+            }
+            Self::DependentFunctionVectors => {
+                f.write_str("function vectors are linearly dependent over the field")
+            }
+            Self::NoiseTooLarge => f.write_str("ciphertext noise exceeds the decoding ceiling"),
         }
     }
 }
