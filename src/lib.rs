@@ -1,3 +1,4 @@
+mod class_group;
 mod field;
 mod number_theory;
 mod sampling;
