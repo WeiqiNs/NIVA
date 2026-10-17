@@ -976,7 +976,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 [[package]]
 name = "rust_flpcp"
 version = "0.1.0"
-source = "git+https://github.com/WeiqiNs/RustFLPCP?rev=4bcc8c0eda6220db56266b79f456813f8d734a23#4bcc8c0eda6220db56266b79f456813f8d734a23"
+source = "git+https://github.com/WeiqiNs/RustFLPCP?rev=2db89dc351a66cc48f2587f26b5c9e73cb60ecb2#2db89dc351a66cc48f2587f26b5c9e73cb60ecb2"
 dependencies = [
  "ark-ff",
  "ark-poly",

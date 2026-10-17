@@ -16,7 +16,7 @@ ark-ff = "0.6.0"
 ark-std = "0.6.0"
 dashu-int = "0.6"
 rayon = { version = "1.12", optional = true }
-rust_flpcp = { version = "0.1.0", git = "https://github.com/WeiqiNs/RustFLPCP", rev = "4bcc8c0eda6220db56266b79f456813f8d734a23" }
+rust_flpcp = { version = "0.1.0", git = "https://github.com/WeiqiNs/RustFLPCP", rev = "2db89dc351a66cc48f2587f26b5c9e73cb60ecb2" }
 
 [dev-dependencies]
 criterion = "0.8.2"

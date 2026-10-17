@@ -67,11 +67,12 @@ Run `cargo run --example costs` for each rule's ciphertext size and query count.
 ```toml
 [dependencies]
 niva = { git = "https://github.com/WeiqiNs/NIVA" }
-rust_flpcp = { git = "https://github.com/WeiqiNs/RustFLPCP", rev = "<the rev in NIVA's Cargo.toml>" }
+rust_flpcp = { git = "https://github.com/WeiqiNs/RustFLPCP", rev = "2db89dc351a66cc48f2587f26b5c9e73cb60ecb2" }
 rand = "0.8"
 ```
 
-Circuits come from `rust_flpcp`, so pin the revision NIVA pins. The `parallel` feature spreads exponentiations,
+Circuits come from `rust_flpcp`, so pin the same revision as NIVA's `Cargo.toml`; a different one is a separate
+crate whose circuits NIVA's types do not accept. The `parallel` feature spreads exponentiations,
 validation and aggregation over threads. Everything is pure Rust; no C toolchain is needed.
 
 ## Benchmarks
