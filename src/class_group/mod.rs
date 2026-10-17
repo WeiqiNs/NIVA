@@ -1,6 +1,6 @@
 mod exp;
 
-pub(crate) use exp::pow;
+pub(crate) use exp::{FixedBase, multi_exp, pow};
 
 use dashu_int::ops::{DivRem, DivRemEuclid, ExtendedGcd, RemEuclid, SquareRoot, UnsignedAbs};
 use dashu_int::{IBig, UBig};

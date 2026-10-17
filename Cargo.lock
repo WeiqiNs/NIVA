@@ -555,6 +555,7 @@ dependencies = [
  "ark-ff",
  "ark-std",
  "dashu-int",
+ "rayon",
  "rust_flpcp",
 ]
 

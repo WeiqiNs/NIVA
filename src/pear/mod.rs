@@ -1,7 +1,10 @@
 use crate::clt::{self, Ciphertext, FunctionKey, MasterSecretKey, Params, PublicKey};
 use crate::error::PearError;
 use ark_ff::PrimeField;
+use ark_std::cfg_iter;
 use ark_std::rand::{CryptoRng, RngCore};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use rust_flpcp::{Circuit, Flp, Query};
 use std::sync::Arc;
 
@@ -40,6 +43,16 @@ pub struct Server<F: PrimeField, C> {
 
 #[derive(Clone, Debug)]
 pub struct Contribution<F>(Ciphertext<F>);
+
+#[cfg(feature = "parallel")]
+fn tree_reduce<T: Send>(items: Vec<T>, combine: impl Fn(T, T) -> T + Send + Sync) -> Option<T> {
+    items.into_par_iter().reduce_with(combine)
+}
+
+#[cfg(not(feature = "parallel"))]
+fn tree_reduce<T>(items: Vec<T>, combine: impl Fn(T, T) -> T) -> Option<T> {
+    items.into_iter().reduce(combine)
+}
 
 impl<F: PrimeField> Analyst<F> {
     pub fn setup<C: Circuit<F>>(
@@ -130,12 +143,10 @@ impl<F: PrimeField, C: Circuit<F>> Server<F, C> {
             function_keys,
             payload_len,
         } = &self.verification_key;
-        let answers = function_keys
-            .iter()
+        let public_key = &self.public_key;
+        let answers = cfg_iter!(function_keys)
             .zip(query.linear_queries())
-            .map(|(key, linear)| {
-                Some(self.public_key.eval(key, &ciphertext).ok()? + linear.constant)
-            })
+            .map(|(key, linear)| Some(public_key.eval(key, &ciphertext).ok()? + linear.constant))
             .collect::<Option<Vec<F>>>()?;
         if !self.flp.decide(query, &answers) {
             return None;
@@ -148,11 +159,19 @@ impl<F: PrimeField, C: Circuit<F>> Server<F, C> {
         contributions: &[Contribution<F>],
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Ciphertext<F> {
+        let payload_key = &self.payload_key;
         let zeros = vec![F::ZERO; self.verification_key.payload_len];
-        contributions.iter().fold(
-            self.payload_key.encrypt_unchecked(&zeros, rng),
-            |sum, Contribution(ciphertext)| self.payload_key.add_unchecked(&sum, ciphertext),
-        )
+        let fresh = payload_key.encrypt_unchecked(&zeros, rng);
+        let ciphertexts = contributions
+            .iter()
+            .map(|Contribution(ciphertext)| ciphertext.clone())
+            .collect();
+        match tree_reduce(ciphertexts, |left, right| {
+            payload_key.add_unchecked(&left, &right)
+        }) {
+            Some(sum) => payload_key.add_unchecked(&fresh, &sum),
+            None => fresh,
+        }
     }
 }
 

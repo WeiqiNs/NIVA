@@ -1,5 +1,5 @@
 use super::SECURITY_BITS;
-use crate::class_group::{ClassGroup, Form, pow};
+use crate::class_group::{ClassGroup, FixedBase, Form, pow};
 use crate::error::CltError;
 use crate::number_theory::{is_probable_prime, kronecker};
 use crate::sampling::{DiscreteGaussian, uniform_below};
@@ -19,7 +19,7 @@ pub(crate) struct HsmGroup {
 #[derive(Clone)]
 pub struct Params<F> {
     hsm: HsmGroup,
-    generator: Form,
+    generator: FixedBase,
     randomness: DiscreteGaussian,
     key: DiscreteGaussian,
     half: F,
@@ -122,11 +122,13 @@ impl<F: PrimeField> Params<F> {
         let hsm = HsmGroup::new(p, IBig::from(q));
         let randomness_variance = class_number_bound(&hsm.delta_k).sqr() * SECURITY_BITS;
         let key_variance = &randomness_variance * modulus.sqr();
+        let key = DiscreteGaussian::new(key_variance);
+        let generator_bits = key.variance().sqrt().bit_len() + 8;
         Ok(Self {
-            generator: hsm.generator(),
+            generator: FixedBase::new(hsm.group(), hsm.generator(), generator_bits),
             hsm,
             randomness: DiscreteGaussian::new(randomness_variance),
-            key: DiscreteGaussian::new(key_variance),
+            key,
             half: F::from_le_bytes_mod_order(&((modulus + UBig::ONE) >> 1).to_le_bytes()),
             discriminant_bits,
         })
@@ -141,7 +143,7 @@ impl<F: PrimeField> Params<F> {
     }
 
     pub(crate) fn power_of_generator(&self, exponent: &IBig) -> Form {
-        pow(self.group(), &self.generator, exponent)
+        self.generator.pow(self.group(), exponent)
     }
 
     pub(crate) fn encode(&self, message: F) -> Form {
@@ -161,20 +163,11 @@ impl<F: PrimeField> Params<F> {
             .hsm
             .solve(&self.group().square(form))
             .ok_or(CltError::NotInSubgroup)?;
-        Ok(Self::field(&doubled) * self.half)
+        Ok(F::from_le_bytes_mod_order(&doubled.unsigned_abs().to_le_bytes()) * self.half)
     }
 
     pub(crate) fn lift(x: F) -> IBig {
         IBig::from(UBig::from_le_bytes(&x.into_bigint().to_bytes_le()))
-    }
-
-    pub(crate) fn field(n: &IBig) -> F {
-        let magnitude = F::from_le_bytes_mod_order(&n.unsigned_abs().to_le_bytes());
-        if *n < IBig::ZERO {
-            -magnitude
-        } else {
-            magnitude
-        }
     }
 }
 
@@ -253,6 +246,10 @@ pub(crate) mod tests {
         for bits in [259, TEST_DISCRIMINANT_BITS] {
             let params = Params::<Field128>::generate(bits, &mut rng).unwrap();
             assert_eq!(params.discriminant_bits(), bits);
+            assert_eq!(
+                format!("{params:?}"),
+                format!("Params {{ discriminant_bits: {bits}, .. }}")
+            );
             let hsm = &params.hsm;
             let q = -&hsm.delta_k / &p;
             assert_eq!(&p * &q, -&hsm.delta_k);
@@ -261,13 +258,13 @@ pub(crate) mod tests {
             assert_eq!(kronecker(&p, &q), -1);
             assert!(q > &p << 2);
             assert_eq!(hsm.delta_k.bit_len(), bits as usize);
-            let generator = &params.generator;
+            let generator = &params.power_of_generator(&IBig::ONE);
             assert_eq!(
                 generator.b.sqr() - ((&generator.a * &generator.c) << 2),
                 p.sqr() * &hsm.delta_k
             );
             assert!(!generator.is_identity());
-            assert!(is_canonical(&params.generator, hsm.group()));
+            assert!(is_canonical(generator, hsm.group()));
 
             let random = Field128::rand(&mut rng);
             for m in [Field128::ZERO, Field128::ONE, -Field128::ONE, random] {

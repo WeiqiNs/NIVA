@@ -2,11 +2,15 @@ mod params;
 
 pub use params::Params;
 
-use crate::class_group::{Form, pow};
+use crate::class_group::{FixedBase, Form, multi_exp, pow};
 use crate::error::CltError;
 use ark_ff::{Field, PrimeField};
+use ark_std::cfg_iter;
 use ark_std::rand::{CryptoRng, RngCore};
 use dashu_int::IBig;
+use dashu_int::ops::BitTest;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -81,8 +85,7 @@ pub fn setup<F: PrimeField>(
     rng: &mut (impl CryptoRng + RngCore),
 ) -> (PublicKey<F>, MasterSecretKey<F>) {
     let exponents: Vec<IBig> = (0..dimension).map(|_| params.sample_key(rng)).collect();
-    let bases = exponents
-        .iter()
+    let bases = cfg_iter!(exponents)
         .map(|exponent| params.power_of_generator(exponent))
         .collect();
     (
@@ -120,8 +123,7 @@ impl<F: PrimeField> PublicKey<F> {
         let params = &self.params;
         let group = params.group();
         let randomness = params.sample_randomness(rng);
-        let coords = message
-            .iter()
+        let coords = cfg_iter!(message)
             .zip(&self.bases)
             .map(|(&value, base)| {
                 group.compose(&params.encode(value), &pow(group, base, &randomness))
@@ -137,11 +139,9 @@ impl<F: PrimeField> PublicKey<F> {
     pub fn eval(&self, key: &FunctionKey<F>, ciphertext: &Ciphertext<F>) -> Result<F, CltError> {
         check_dimension(key.coeffs.len(), ciphertext.dimension())?;
         let group = self.params.group();
-        let unmasked = ciphertext.coords.iter().zip(&key.coeffs).fold(
-            pow(group, &ciphertext.randomness, &-&key.secret),
-            |product, (coord, coeff)| group.compose(&product, &pow(group, coord, coeff)),
-        );
-        self.params.decode(&unmasked)
+        let masked = multi_exp(group, &ciphertext.coords, &key.coeffs);
+        let mask = pow(group, &ciphertext.randomness, &-&key.secret);
+        self.params.decode(&group.compose(&masked, &mask))
     }
 
     pub fn add(
@@ -214,12 +214,17 @@ impl<F: PrimeField> MasterSecretKey<F> {
     pub fn decrypt(&self, ciphertext: &Ciphertext<F>) -> Result<Vec<F>, CltError> {
         check_dimension(self.dimension(), ciphertext.dimension())?;
         let group = self.params.group();
-        ciphertext
-            .coords
+        let max_bits = self
+            .exponents
             .iter()
+            .map(BitTest::bit_len)
+            .max()
+            .unwrap_or(0);
+        let unmask = FixedBase::new(group, ciphertext.randomness.inverse(), max_bits);
+        cfg_iter!(ciphertext.coords)
             .zip(&self.exponents)
             .map(|(coord, exponent)| {
-                let mask = pow(group, &ciphertext.randomness, &-exponent);
+                let mask = unmask.pow(group, exponent);
                 self.params.decode(&group.compose(coord, &mask))
             })
             .collect()
