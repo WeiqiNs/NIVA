@@ -1,5 +1,6 @@
-use crate::clt::{self, Ciphertext, DecryptionKey, FunctionKey, Params, PublicKey};
+use crate::clt::Params;
 use crate::error::PearError;
+use crate::ipfe::{Ipfe, IpfePublicKey};
 use ark_ff::PrimeField;
 use ark_std::cfg_iter;
 use ark_std::rand::{CryptoRng, RngCore};
@@ -10,47 +11,62 @@ use std::fmt;
 use std::sync::Arc;
 
 #[derive(Debug)]
-pub struct Analyst<F> {
-    secret: DecryptionKey<F>,
+pub struct Analyst<F: PrimeField, S: Ipfe<F> = Params<F>> {
+    secret: S::DecryptionKey,
 }
 
 #[derive(Debug)]
-pub struct Setup<F> {
-    pub analyst: Analyst<F>,
-    pub public_key: PublicKey<F>,
-    pub verification_key: VerificationKey<F>,
+pub struct Setup<F: PrimeField, S: Ipfe<F> = Params<F>> {
+    pub analyst: Analyst<F, S>,
+    pub public_key: S::PublicKey,
+    pub verification_key: VerificationKey<F, S>,
 }
 
-#[derive(Clone)]
-pub struct VerificationKey<F> {
+pub struct VerificationKey<F: PrimeField, S: Ipfe<F> = Params<F>> {
     query: Query<F>,
-    function_keys: Vec<FunctionKey<F>>,
+    function_keys: Vec<S::FunctionKey>,
     payload_len: usize,
 }
 
 #[derive(Debug)]
-pub struct Client<F: PrimeField, C> {
+pub struct Client<F: PrimeField, C, S: Ipfe<F> = Params<F>> {
     flp: Flp<F, C>,
-    public_key: PublicKey<F>,
+    public_key: S::PublicKey,
 }
 
 #[derive(Debug)]
-pub struct Server<F: PrimeField, C> {
+pub struct Server<F: PrimeField, C, S: Ipfe<F> = Params<F>> {
     flp: Flp<F, C>,
-    public_key: PublicKey<F>,
-    payload_key: PublicKey<F>,
-    verification_key: VerificationKey<F>,
+    public_key: S::PublicKey,
+    payload_key: S::PublicKey,
+    verification_key: VerificationKey<F, S>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Contribution<F>(Ciphertext<F>);
+#[derive(Debug)]
+pub struct Contribution<F: PrimeField, S: Ipfe<F> = Params<F>>(S::Ciphertext);
 
-impl<F> fmt::Debug for VerificationKey<F> {
+impl<F: PrimeField, S: Ipfe<F>> Clone for VerificationKey<F, S> {
+    fn clone(&self) -> Self {
+        Self {
+            query: self.query.clone(),
+            function_keys: self.function_keys.clone(),
+            payload_len: self.payload_len,
+        }
+    }
+}
+
+impl<F: PrimeField, S: Ipfe<F>> fmt::Debug for VerificationKey<F, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VerificationKey")
             .field("queries", &self.function_keys.len())
             .field("payload_len", &self.payload_len)
             .finish_non_exhaustive()
+    }
+}
+
+impl<F: PrimeField, S: Ipfe<F>> Clone for Contribution<F, S> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
     }
 }
 
@@ -64,13 +80,13 @@ fn tree_reduce<T>(items: Vec<T>, combine: impl Fn(T, T) -> T) -> Option<T> {
     items.into_iter().reduce(combine)
 }
 
-impl<F: PrimeField> Analyst<F> {
+impl<F: PrimeField, S: Ipfe<F>> Analyst<F, S> {
     pub fn setup<C: Circuit<F>>(
-        params: &Arc<Params<F>>,
+        params: &Arc<S>,
         circuit: C,
         payload_len: usize,
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Result<Setup<F>, PearError> {
+    ) -> Result<Setup<F, S>, PearError> {
         let input_len = circuit.input_len();
         if payload_len > input_len {
             return Err(PearError::PayloadTooLong {
@@ -79,17 +95,17 @@ impl<F: PrimeField> Analyst<F> {
             });
         }
         let flp = Flp::new(circuit)?;
-        let (public_key, secret_key) = clt::setup(params, flp.vector_len(), rng);
+        let (public_key, secret_key) = S::setup(params, flp.vector_len(), rng)?;
         let query = flp.query(rng);
         let vectors: Vec<&[F]> = query
             .linear_queries()
             .iter()
             .map(|linear| linear.coeffs.as_slice())
             .collect();
-        let (function_keys, decryption_key) = secret_key.function_keys(&vectors)?;
+        let (function_keys, decryption_key) = S::function_keys(secret_key, &vectors)?;
         Ok(Setup {
             analyst: Self {
-                secret: decryption_key.prefix(payload_len)?,
+                secret: S::prefix_decryption_key(&decryption_key, payload_len)?,
             },
             public_key,
             verification_key: VerificationKey {
@@ -100,15 +116,19 @@ impl<F: PrimeField> Analyst<F> {
         })
     }
 
-    pub fn decrypt(&self, aggregate: &Ciphertext<F>) -> Result<Vec<F>, PearError> {
-        Ok(self.secret.decrypt(aggregate)?)
+    pub fn decrypt(&self, aggregate: &S::Ciphertext) -> Result<Vec<F>, PearError> {
+        S::decrypt(&self.secret, aggregate)
     }
 }
 
-impl<F: PrimeField, C: Circuit<F>> Client<F, C> {
-    pub fn new(circuit: C, public_key: PublicKey<F>) -> Result<Self, PearError> {
+impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Client<F, C, S> {
+    pub fn new<K>(circuit: C, public_key: K) -> Result<Self, PearError>
+    where
+        K: IpfePublicKey<F, Scheme = S>,
+        S: Ipfe<F, PublicKey = K>,
+    {
         let flp = Flp::new(circuit)?;
-        if public_key.dimension() != flp.vector_len() {
+        if S::dimension(&public_key) != flp.vector_len() {
             return Err(PearError::CircuitMismatch);
         }
         Ok(Self { flp, public_key })
@@ -118,40 +138,40 @@ impl<F: PrimeField, C: Circuit<F>> Client<F, C> {
         &self,
         input: &[F],
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Result<Ciphertext<F>, PearError> {
+    ) -> Result<S::Ciphertext, PearError> {
         let vector = self.flp.prove(input, rng)?;
-        Ok(self.public_key.encrypt_unchecked(&vector, rng))
+        Ok(S::encrypt(&self.public_key, &vector, rng))
     }
 }
 
-impl<F: PrimeField, C: Circuit<F>> Server<F, C> {
+impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Server<F, C, S> {
     pub fn new(
         circuit: C,
-        public_key: PublicKey<F>,
-        verification_key: VerificationKey<F>,
+        public_key: S::PublicKey,
+        verification_key: VerificationKey<F, S>,
     ) -> Result<Self, PearError> {
         let input_len = circuit.input_len();
         let flp = Flp::new(circuit)?;
-        if public_key.dimension() != flp.vector_len()
+        if S::dimension(&public_key) != flp.vector_len()
             || verification_key.function_keys.len() != flp.query_count()
             || verification_key
                 .function_keys
                 .iter()
-                .any(|key| key.dimension() != flp.vector_len())
+                .any(|key| S::key_dimension(key) != flp.vector_len())
             || verification_key.payload_len > input_len
         {
             return Err(PearError::CircuitMismatch);
         }
         Ok(Self {
             flp,
-            payload_key: public_key.prefix(verification_key.payload_len)?,
+            payload_key: S::prefix_public_key(&public_key, verification_key.payload_len)?,
             public_key,
             verification_key,
         })
     }
 
     #[must_use]
-    pub fn validate(&self, ciphertext: Ciphertext<F>) -> Option<Contribution<F>> {
+    pub fn validate(&self, ciphertext: S::Ciphertext) -> Option<Contribution<F, S>> {
         let VerificationKey {
             query,
             function_keys,
@@ -160,30 +180,32 @@ impl<F: PrimeField, C: Circuit<F>> Server<F, C> {
         let public_key = &self.public_key;
         let answers = cfg_iter!(function_keys)
             .zip(query.linear_queries())
-            .map(|(key, linear)| Some(public_key.eval(key, &ciphertext).ok()? + linear.constant))
+            .map(|(key, linear)| {
+                Some(S::eval(public_key, key, &ciphertext).ok()? + linear.constant)
+            })
             .collect::<Option<Vec<F>>>()?;
         if !self.flp.decide(query, &answers) {
             return None;
         }
-        ciphertext.prefix(*payload_len).ok().map(Contribution)
+        S::truncate(ciphertext, *payload_len).ok().map(Contribution)
     }
 
     pub fn aggregate(
         &self,
-        contributions: &[Contribution<F>],
+        contributions: &[Contribution<F, S>],
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Ciphertext<F> {
+    ) -> S::Ciphertext {
         let payload_key = &self.payload_key;
         let zeros = vec![F::ZERO; self.verification_key.payload_len];
-        let fresh = payload_key.encrypt_unchecked(&zeros, rng);
+        let fresh = S::encrypt(payload_key, &zeros, rng);
         let ciphertexts = contributions
             .iter()
             .map(|Contribution(ciphertext)| ciphertext.clone())
             .collect();
         match tree_reduce(ciphertexts, |left, right| {
-            payload_key.add_unchecked(&left, &right)
+            S::add(payload_key, &left, &right)
         }) {
-            Some(sum) => payload_key.add_unchecked(&fresh, &sum),
+            Some(sum) => S::add(payload_key, &fresh, &sum),
             None => fresh,
         }
     }
@@ -194,6 +216,7 @@ mod tests {
     use super::{Analyst, Client, Server};
     use crate::Field128;
     use crate::clt::tests::{rng, shift_randomness, test_params};
+    use crate::lattice::tests::{magnitude, push_past_ceiling};
     use ark_ff::{AdditiveGroup, Field};
     use rust_flpcp::Range;
     use std::sync::Arc;
@@ -213,6 +236,35 @@ mod tests {
             server
                 .validate(shift_randomness(&setup.public_key, ciphertext))
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn validate_rejects_noise_above_the_ceiling() {
+        let mut rng = rng();
+        let circuit = Range::binary(4);
+        let params = Arc::new(crate::lattice::tests::test_params());
+        let setup = Analyst::setup(&params, circuit.clone(), 4, &mut rng).unwrap();
+        let client = Client::new(circuit.clone(), setup.public_key.clone()).unwrap();
+        let server = Server::new(
+            circuit.clone(),
+            setup.public_key,
+            setup.verification_key.clone(),
+        )
+        .unwrap();
+        let input = [Field128::ONE, Field128::ZERO, Field128::ONE, Field128::ONE];
+        let ciphertext = client.encrypt(&input, &mut rng).unwrap();
+        assert!(server.validate(ciphertext.clone()).is_some());
+
+        let coeffs = &setup.verification_key.query.linear_queries()[0].coeffs;
+        let index = (0..input.len())
+            .max_by_key(|&index| magnitude(coeffs[index]))
+            .unwrap();
+        let shifted = push_past_ceiling(ciphertext, index, coeffs[index]);
+        assert!(server.validate(shifted.clone()).is_none());
+        assert_eq!(
+            setup.analyst.decrypt(&shifted.prefix(4).unwrap()),
+            Ok(input.to_vec())
         );
     }
 }

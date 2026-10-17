@@ -4,6 +4,8 @@ pub use params::Params;
 
 use crate::class_group::{FixedBase, Form, multi_exp, pow};
 use crate::error::CltError;
+use crate::error::PearError;
+use crate::ipfe::{Ipfe, IpfePublicKey};
 use crate::linear_algebra::linearly_independent;
 use ark_ff::PrimeField;
 use ark_std::cfg_iter;
@@ -105,7 +107,7 @@ impl<F: PrimeField> PublicKey<F> {
         Ok(self.encrypt_unchecked(message, rng))
     }
 
-    pub(crate) fn encrypt_unchecked(
+    fn encrypt_unchecked(
         &self,
         message: &[F],
         rng: &mut (impl CryptoRng + RngCore),
@@ -143,11 +145,7 @@ impl<F: PrimeField> PublicKey<F> {
         Ok(self.add_unchecked(left, right))
     }
 
-    pub(crate) fn add_unchecked(
-        &self,
-        left: &Ciphertext<F>,
-        right: &Ciphertext<F>,
-    ) -> Ciphertext<F> {
+    fn add_unchecked(&self, left: &Ciphertext<F>, right: &Ciphertext<F>) -> Ciphertext<F> {
         let group = self.params.group();
         Ciphertext {
             randomness: group.compose(&left.randomness, &right.randomness),
@@ -279,6 +277,87 @@ impl<F> Ciphertext<F> {
         check_prefix(len, self.dimension())?;
         self.coords.truncate(len);
         Ok(self)
+    }
+}
+
+impl<F: PrimeField> IpfePublicKey<F> for PublicKey<F> {
+    type Scheme = Params<F>;
+}
+
+impl<F: PrimeField> Ipfe<F> for Params<F> {
+    type PublicKey = PublicKey<F>;
+    type MasterSecretKey = MasterSecretKey<F>;
+    type DecryptionKey = DecryptionKey<F>;
+    type FunctionKey = FunctionKey<F>;
+    type Ciphertext = Ciphertext<F>;
+
+    fn setup(
+        params: &Arc<Self>,
+        dimension: usize,
+        rng: &mut (impl CryptoRng + RngCore),
+    ) -> Result<(PublicKey<F>, MasterSecretKey<F>), PearError> {
+        Ok(setup(params, dimension, rng))
+    }
+
+    fn dimension(public_key: &PublicKey<F>) -> usize {
+        public_key.dimension()
+    }
+
+    fn key_dimension(key: &FunctionKey<F>) -> usize {
+        key.dimension()
+    }
+
+    fn function_keys(
+        secret_key: MasterSecretKey<F>,
+        vectors: &[&[F]],
+    ) -> Result<(Vec<FunctionKey<F>>, DecryptionKey<F>), PearError> {
+        Ok(secret_key.function_keys(vectors)?)
+    }
+
+    fn encrypt(
+        public_key: &PublicKey<F>,
+        message: &[F],
+        rng: &mut (impl CryptoRng + RngCore),
+    ) -> Ciphertext<F> {
+        public_key.encrypt_unchecked(message, rng)
+    }
+
+    fn eval(
+        public_key: &PublicKey<F>,
+        key: &FunctionKey<F>,
+        ciphertext: &Ciphertext<F>,
+    ) -> Result<F, PearError> {
+        Ok(public_key.eval(key, ciphertext)?)
+    }
+
+    fn add(
+        public_key: &PublicKey<F>,
+        left: &Ciphertext<F>,
+        right: &Ciphertext<F>,
+    ) -> Ciphertext<F> {
+        public_key.add_unchecked(left, right)
+    }
+
+    fn decrypt(
+        decryption_key: &DecryptionKey<F>,
+        ciphertext: &Ciphertext<F>,
+    ) -> Result<Vec<F>, PearError> {
+        Ok(decryption_key.decrypt(ciphertext)?)
+    }
+
+    fn prefix_public_key(public_key: &PublicKey<F>, len: usize) -> Result<PublicKey<F>, PearError> {
+        Ok(public_key.prefix(len)?)
+    }
+
+    fn prefix_decryption_key(
+        decryption_key: &DecryptionKey<F>,
+        len: usize,
+    ) -> Result<DecryptionKey<F>, PearError> {
+        Ok(decryption_key.prefix(len)?)
+    }
+
+    fn truncate(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, PearError> {
+        Ok(ciphertext.prefix(len)?)
     }
 }
 

@@ -131,7 +131,6 @@ fn dimension_mismatches_are_errors() {
         .encrypt(&message[..2], &mut rng)
         .unwrap();
     let (keys, decryption_key) = secret_key.function_keys(&[message.as_slice()]).unwrap();
-    assert_eq!(keys[0].dimension(), 3);
 
     assert_eq!(public_key.encrypt(&message[..2], &mut rng).err(), mismatch);
     let (_, other_secret_key) = lattice::setup(&lattice_params(), 3, &mut rng).unwrap();

@@ -26,6 +26,7 @@ pub enum LatticeError {
 #[non_exhaustive]
 pub enum PearError {
     Clt(CltError),
+    Lattice(LatticeError),
     Flp(FlpError),
     PayloadTooLong {
         payload_len: usize,
@@ -95,6 +96,7 @@ impl fmt::Display for PearError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Clt(_) => f.write_str("functional encryption failed"),
+            Self::Lattice(_) => f.write_str("lattice functional encryption failed"),
             Self::Flp(_) => f.write_str("validity proof failed"),
             Self::PayloadTooLong {
                 payload_len,
@@ -114,9 +116,16 @@ impl std::error::Error for PearError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Clt(error) => Some(error),
+            Self::Lattice(error) => Some(error),
             Self::Flp(error) => Some(error),
             Self::PayloadTooLong { .. } | Self::CircuitMismatch => None,
         }
+    }
+}
+
+impl From<LatticeError> for PearError {
+    fn from(error: LatticeError) -> Self {
+        Self::Lattice(error)
     }
 }
 

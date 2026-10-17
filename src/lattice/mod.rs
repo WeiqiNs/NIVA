@@ -4,6 +4,8 @@ mod ring;
 pub use params::{Headroom150, Headroom150Config, LatticeField, Params};
 
 use crate::error::LatticeError;
+use crate::error::PearError;
+use crate::ipfe::{Ipfe, IpfePublicKey};
 use crate::linear_algebra::linearly_independent;
 use crate::sampling::centered_binomial;
 use ark_std::cfg_iter;
@@ -120,7 +122,7 @@ impl<F: LatticeField> PublicKey<F> {
         Ok(self.encrypt_unchecked(message, rng))
     }
 
-    pub(crate) fn encrypt_unchecked(
+    fn encrypt_unchecked(
         &self,
         message: &[F],
         rng: &mut (impl CryptoRng + RngCore),
@@ -175,7 +177,7 @@ impl<F: LatticeField> PublicKey<F> {
         Ok(Self::add_unchecked(left, right))
     }
 
-    pub(crate) fn add_unchecked(left: &Ciphertext<F>, right: &Ciphertext<F>) -> Ciphertext<F> {
+    fn add_unchecked(left: &Ciphertext<F>, right: &Ciphertext<F>) -> Ciphertext<F> {
         Ciphertext {
             randomness: &left.randomness + &right.randomness,
             coords: left
@@ -293,6 +295,83 @@ impl<F: LatticeField> Ciphertext<F> {
     }
 }
 
+impl<F: LatticeField> IpfePublicKey<F> for PublicKey<F> {
+    type Scheme = Params<F>;
+}
+
+impl<F: LatticeField> Ipfe<F> for Params<F> {
+    type PublicKey = PublicKey<F>;
+    type MasterSecretKey = MasterSecretKey<F>;
+    type DecryptionKey = DecryptionKey<F>;
+    type FunctionKey = FunctionKey<F>;
+    type Ciphertext = Ciphertext<F>;
+
+    fn setup(
+        params: &Arc<Self>,
+        dimension: usize,
+        rng: &mut (impl CryptoRng + RngCore),
+    ) -> Result<(PublicKey<F>, MasterSecretKey<F>), PearError> {
+        Ok(setup(params, dimension, rng)?)
+    }
+
+    fn dimension(public_key: &PublicKey<F>) -> usize {
+        public_key.dimension()
+    }
+
+    fn key_dimension(key: &FunctionKey<F>) -> usize {
+        key.dimension()
+    }
+
+    fn function_keys(
+        secret_key: MasterSecretKey<F>,
+        vectors: &[&[F]],
+    ) -> Result<(Vec<FunctionKey<F>>, DecryptionKey<F>), PearError> {
+        Ok(secret_key.function_keys(vectors)?)
+    }
+
+    fn encrypt(
+        public_key: &PublicKey<F>,
+        message: &[F],
+        rng: &mut (impl CryptoRng + RngCore),
+    ) -> Ciphertext<F> {
+        public_key.encrypt_unchecked(message, rng)
+    }
+
+    fn eval(
+        public_key: &PublicKey<F>,
+        key: &FunctionKey<F>,
+        ciphertext: &Ciphertext<F>,
+    ) -> Result<F, PearError> {
+        Ok(public_key.eval(key, ciphertext)?)
+    }
+
+    fn add(_: &PublicKey<F>, left: &Ciphertext<F>, right: &Ciphertext<F>) -> Ciphertext<F> {
+        PublicKey::add_unchecked(left, right)
+    }
+
+    fn decrypt(
+        decryption_key: &DecryptionKey<F>,
+        ciphertext: &Ciphertext<F>,
+    ) -> Result<Vec<F>, PearError> {
+        Ok(decryption_key.decrypt(ciphertext)?)
+    }
+
+    fn prefix_public_key(public_key: &PublicKey<F>, len: usize) -> Result<PublicKey<F>, PearError> {
+        Ok(public_key.prefix(len)?)
+    }
+
+    fn prefix_decryption_key(
+        decryption_key: &DecryptionKey<F>,
+        len: usize,
+    ) -> Result<DecryptionKey<F>, PearError> {
+        Ok(decryption_key.prefix(len)?)
+    }
+
+    fn truncate(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, PearError> {
+        Ok(ciphertext.prefix(len)?)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     pub(crate) use super::params::tests::{TEST_RING_DIMENSION, rng, test_params};
@@ -321,20 +400,38 @@ pub(crate) mod tests {
         UBig::from_le_bytes(&value.into_bigint().to_bytes_le())
     }
 
+    fn is_negative<K: PrimeField>(value: K) -> bool {
+        value.into_bigint() > K::MODULUS_MINUS_ONE_DIV_TWO
+    }
+
+    pub(crate) fn magnitude<K: PrimeField>(value: K) -> UBig {
+        integer(if is_negative(value) { -value } else { value })
+    }
+
     fn centred<K: PrimeField>(value: K) -> f64 {
-        if value.into_bigint() <= K::MODULUS_MINUS_ONE_DIV_TWO {
-            integer(value).to_f64().value()
+        let magnitude = magnitude(value).to_f64().value();
+        if is_negative(value) {
+            -magnitude
         } else {
-            -integer(-value).to_f64().value()
+            magnitude
         }
     }
 
-    pub(crate) fn residue(value: &UBig) -> Residue<Field128> {
-        let bytes = value.to_le_bytes();
-        Residue {
-            field: Field128::from_le_bytes_mod_order(&bytes),
-            headroom: Headroom150::from_le_bytes_mod_order(&bytes),
-        }
+    pub(crate) fn push_past_ceiling(
+        mut ciphertext: Ciphertext<Field128>,
+        index: usize,
+        coefficient: Field128,
+    ) -> Ciphertext<Field128> {
+        let delta = UBig::from_le_bytes(&Headroom150::MODULUS.to_bytes_le());
+        let denominator = magnitude(coefficient) << 3;
+        let shift = (UBig::from(3u8) * delta + &denominator - UBig::ONE) / &denominator;
+        let bytes = shift.to_le_bytes();
+        ciphertext.coords[index] = ciphertext.coords[index]
+            + Residue {
+                field: Field128::from_le_bytes_mod_order(&bytes),
+                headroom: Headroom150::from_le_bytes_mod_order(&bytes),
+            };
+        ciphertext
     }
 
     #[test]
@@ -409,11 +506,7 @@ pub(crate) mod tests {
             Ok(inner_product(&message, &vector))
         );
 
-        let delta = UBig::from_le_bytes(&Headroom150::MODULUS.to_bytes_le());
-        let denominator = UBig::from(8u8) << 20;
-        let shift = (UBig::from(3u8) * delta + &denominator - UBig::ONE) / &denominator;
-        let mut shifted = ciphertext;
-        shifted.coords[0] = shifted.coords[0] + residue(&shift);
+        let shifted = push_past_ceiling(ciphertext, 0, vector[0]);
         assert_eq!(
             public_key.eval(&keys[0], &shifted),
             Err(LatticeError::NoiseTooLarge)
