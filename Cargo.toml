@@ -41,3 +41,7 @@ opt-level = 3
 [[bench]]
 name = "pear"
 harness = false
+
+[[bench]]
+name = "lattice"
+harness = false
