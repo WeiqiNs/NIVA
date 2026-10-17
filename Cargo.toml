@@ -15,9 +15,10 @@ publish = false
 ark-ff = "0.6.0"
 ark-std = "0.6.0"
 dashu-int = "0.6"
+rust_flpcp = { version = "0.1.0", git = "https://github.com/WeiqiNs/RustFLPCP", rev = "4bcc8c0eda6220db56266b79f456813f8d734a23" }
 
 [features]
-parallel = ["ark-ff/parallel", "ark-std/parallel"]
+parallel = ["ark-ff/parallel", "ark-std/parallel", "rust_flpcp/parallel"]
 
 [lints.rust]
 unsafe_code = "forbid"

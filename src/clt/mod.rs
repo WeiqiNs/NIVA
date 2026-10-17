@@ -256,10 +256,10 @@ impl<F> Ciphertext<F> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    pub(crate) use super::params::tests::{rng, test_params};
     use super::{Ciphertext, MasterSecretKey, PublicKey, setup};
     use crate::Field128;
-    use crate::clt::params::tests::{rng, test_params};
     use crate::error::CltError;
     use ark_ff::{BigInteger, PrimeField, UniformRand};
     use dashu_int::{IBig, UBig};
@@ -314,15 +314,23 @@ mod tests {
         assert_eq!(secret_key.decrypt(&tampered), Ok(message));
     }
 
-    #[test]
-    fn eval_rejects_inconsistent_randomness() {
-        let (public_key, secret_key) = keys(3);
-        let mut ciphertext = public_key.encrypt(&message(3), &mut rng()).unwrap();
+    pub(crate) fn shift_randomness(
+        public_key: &PublicKey<Field128>,
+        mut ciphertext: Ciphertext<Field128>,
+    ) -> Ciphertext<Field128> {
         let params = &public_key.params;
         ciphertext.randomness = params.group().compose(
             &ciphertext.randomness,
             &params.power_of_generator(&IBig::ONE),
         );
+        ciphertext
+    }
+
+    #[test]
+    fn eval_rejects_inconsistent_randomness() {
+        let (public_key, secret_key) = keys(3);
+        let ciphertext = public_key.encrypt(&message(3), &mut rng()).unwrap();
+        let ciphertext = shift_randomness(&public_key, ciphertext);
         let vector = message(3);
         let key = &secret_key.function_keys(&[vector.as_slice()]).unwrap()[0];
         assert_eq!(
