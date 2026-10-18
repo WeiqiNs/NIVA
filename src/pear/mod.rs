@@ -271,8 +271,8 @@ mod tests {
     fn validate_rejects_noise_above_the_ceiling() {
         let mut rng = rng();
         let circuit = Range::binary(4);
-        let params = Arc::new(crate::lattice::tests::test_params());
-        let setup = Analyst::setup(&params, circuit.clone(), 4, &mut rng).unwrap();
+        let scheme = Arc::new(crate::lattice::tests::test_params());
+        let setup = Analyst::setup(&scheme, circuit.clone(), 4, &mut rng).unwrap();
         let client = Client::new(circuit.clone(), setup.public_key.clone()).unwrap();
         let server = Server::new(
             circuit.clone(),
