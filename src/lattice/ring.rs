@@ -8,9 +8,6 @@ pub(crate) struct Ring<K: FftField> {
 
 impl<K: FftField> Ring<K> {
     pub(crate) fn new(dimension: usize) -> Option<Self> {
-        if !dimension.is_power_of_two() {
-            return None;
-        }
         let twist = K::get_root_of_unity(2 * u64::try_from(dimension).ok()?)?;
         Some(Self {
             domain: Radix2EvaluationDomain::new_coset(dimension, twist)?,

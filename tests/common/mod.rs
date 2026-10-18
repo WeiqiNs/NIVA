@@ -8,7 +8,7 @@ use niva::lattice;
 use std::sync::Arc;
 
 pub const TEST_DISCRIMINANT_BITS: u32 = 320;
-pub const TEST_RING_DIMENSION: usize = 1024;
+const TEST_RING_DIMENSION: usize = 1024;
 
 pub fn rng() -> StdRng {
     StdRng::seed_from_u64(11)

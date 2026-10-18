@@ -1,15 +1,15 @@
 use crate::error::PearError;
 use ark_ff::PrimeField;
 use ark_std::rand::{CryptoRng, RngCore};
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::sync::Arc;
 
-pub trait Ipfe<F: PrimeField>: Debug + Send + Sync + Sized {
-    type PublicKey: Clone + Debug + Send + Sync + IpfePublicKey<F, Scheme = Self>;
-    type MasterSecretKey: Debug + Send + Sync;
-    type DecryptionKey: Debug + Send + Sync;
-    type FunctionKey: Clone + Debug + Send + Sync;
-    type Ciphertext: Clone + Debug + Send + Sync;
+pub trait Ipfe<F: PrimeField>: Debug {
+    type PublicKey: Clone + Sync + IpfePublicKey<F, Scheme = Self>;
+    type MasterSecretKey;
+    type DecryptionKey: Debug;
+    type FunctionKey: Clone + Sync;
+    type Ciphertext: Clone + Send + Sync;
 
     fn setup(
         params: &Arc<Self>,
@@ -62,6 +62,12 @@ pub trait Ipfe<F: PrimeField>: Debug + Send + Sync + Sized {
     fn truncate(ciphertext: Self::Ciphertext, len: usize) -> Result<Self::Ciphertext, PearError>;
 }
 
-pub trait IpfePublicKey<F: PrimeField>: Sized {
+pub trait IpfePublicKey<F: PrimeField> {
     type Scheme: Ipfe<F, PublicKey = Self>;
+}
+
+pub(crate) fn redacted(f: &mut fmt::Formatter<'_>, name: &str, dimension: usize) -> fmt::Result {
+    f.debug_struct(name)
+        .field("dimension", &dimension)
+        .finish_non_exhaustive()
 }

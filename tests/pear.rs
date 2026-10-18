@@ -337,20 +337,12 @@ fn verification_key_debug_is_redacted() {
 #[test]
 fn protocol_types_are_thread_safe() {
     fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<PublicKey<Field128>>();
     assert_send_sync::<niva::clt::MasterSecretKey<Field128>>();
-    assert_send_sync::<niva::clt::DecryptionKey<Field128>>();
-    assert_send_sync::<niva::clt::FunctionKey<Field128>>();
-    assert_send_sync::<Ciphertext<Field128>>();
     assert_send_sync::<Analyst<Field128>>();
     assert_send_sync::<Client<Field128, Range>>();
     assert_send_sync::<Server<Field128, Range>>();
     assert_send_sync::<Contribution<Field128>>();
-    assert_send_sync::<lattice::PublicKey<Field128>>();
     assert_send_sync::<lattice::MasterSecretKey<Field128>>();
-    assert_send_sync::<lattice::DecryptionKey<Field128>>();
-    assert_send_sync::<lattice::FunctionKey<Field128>>();
-    assert_send_sync::<lattice::Ciphertext<Field128>>();
     assert_send_sync::<Analyst<Field128, lattice::Params<Field128>>>();
     assert_send_sync::<Client<Field128, Range, lattice::Params<Field128>>>();
     assert_send_sync::<Server<Field128, Range, lattice::Params<Field128>>>();

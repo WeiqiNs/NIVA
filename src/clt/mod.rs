@@ -5,7 +5,7 @@ pub use params::Params;
 use crate::class_group::{FixedBase, Form, multi_exp, pow};
 use crate::error::CltError;
 use crate::error::PearError;
-use crate::ipfe::{Ipfe, IpfePublicKey};
+use crate::ipfe::{Ipfe, IpfePublicKey, redacted};
 use crate::linear_algebra::linearly_independent;
 use ark_ff::PrimeField;
 use ark_std::cfg_iter;
@@ -63,12 +63,6 @@ fn check_prefix(len: usize, dimension: usize) -> Result<(), CltError> {
         return Err(CltError::PrefixTooLong { len, dimension });
     }
     Ok(())
-}
-
-fn redacted(f: &mut fmt::Formatter<'_>, name: &str, dimension: usize) -> fmt::Result {
-    f.debug_struct(name)
-        .field("dimension", &dimension)
-        .finish_non_exhaustive()
 }
 
 pub fn setup<F: PrimeField>(

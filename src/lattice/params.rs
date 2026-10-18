@@ -292,7 +292,7 @@ pub(crate) mod tests {
         Params::new(TEST_RING_DIMENSION).unwrap()
     }
 
-    fn integer(value: &impl BigInteger) -> UBig {
+    pub(crate) fn integer(value: &impl BigInteger) -> UBig {
         UBig::from_le_bytes(&value.to_bytes_le())
     }
 

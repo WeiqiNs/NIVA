@@ -5,7 +5,7 @@ pub use params::{Headroom150, Headroom150Config, LatticeField, Params};
 
 use crate::error::LatticeError;
 use crate::error::PearError;
-use crate::ipfe::{Ipfe, IpfePublicKey};
+use crate::ipfe::{Ipfe, IpfePublicKey, redacted};
 use crate::linear_algebra::linearly_independent;
 use crate::sampling::centered_binomial;
 use ark_std::cfg_iter;
@@ -59,12 +59,6 @@ fn check_prefix(len: usize, dimension: usize) -> Result<(), LatticeError> {
         return Err(LatticeError::PrefixTooLong { len, dimension });
     }
     Ok(())
-}
-
-fn redacted(f: &mut fmt::Formatter<'_>, name: &str, dimension: usize) -> fmt::Result {
-    f.debug_struct(name)
-        .field("dimension", &dimension)
-        .finish_non_exhaustive()
 }
 
 pub fn setup<F: LatticeField>(
@@ -374,13 +368,14 @@ impl<F: LatticeField> Ipfe<F> for Params<F> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    pub(crate) use super::params::tests::{TEST_RING_DIMENSION, rng, test_params};
+    pub(crate) use super::params::tests::test_params;
+    use super::params::tests::{TEST_RING_DIMENSION, integer, rng};
     use super::{Ciphertext, MasterSecretKey, PublicKey, Residue, setup};
     use crate::Field128;
     use crate::error::LatticeError;
     use crate::lattice::Headroom150;
     use crate::sampling::NOISE_ETA;
-    use ark_ff::{AdditiveGroup, BigInteger, Field, PrimeField, UniformRand};
+    use ark_ff::{AdditiveGroup, Field, PrimeField, UniformRand};
     use dashu_int::UBig;
     use std::sync::Arc;
 
@@ -396,16 +391,12 @@ pub(crate) mod tests {
         x.iter().zip(y).map(|(a, b)| *a * b).sum()
     }
 
-    fn integer(value: impl PrimeField) -> UBig {
-        UBig::from_le_bytes(&value.into_bigint().to_bytes_le())
-    }
-
     fn is_negative<K: PrimeField>(value: K) -> bool {
         value.into_bigint() > K::MODULUS_MINUS_ONE_DIV_TWO
     }
 
     pub(crate) fn magnitude<K: PrimeField>(value: K) -> UBig {
-        integer(if is_negative(value) { -value } else { value })
+        integer(&if is_negative(value) { -value } else { value }.into_bigint())
     }
 
     fn centred<K: PrimeField>(value: K) -> f64 {
@@ -422,7 +413,7 @@ pub(crate) mod tests {
         index: usize,
         coefficient: Field128,
     ) -> Ciphertext<Field128> {
-        let delta = UBig::from_le_bytes(&Headroom150::MODULUS.to_bytes_le());
+        let delta = integer(&Headroom150::MODULUS);
         let denominator = magnitude(coefficient) << 3;
         let shift = (UBig::from(3u8) * delta + &denominator - UBig::ONE) / &denominator;
         let bytes = shift.to_le_bytes();
@@ -464,8 +455,7 @@ pub(crate) mod tests {
         let variance = f64::from(NOISE_ETA) / 2.0;
         let ring_dimension = f64::from(u32::try_from(TEST_RING_DIMENSION).unwrap());
         let per_unit_coefficient = 2.0 * ring_dimension * variance.powi(2) + variance;
-        let delta = UBig::from_le_bytes(&Headroom150::MODULUS.to_bytes_le());
-        let delta = delta.to_f64().value();
+        let delta = integer(&Headroom150::MODULUS).to_f64().value();
         let count = f64::from(ENCRYPTIONS);
         for (key, vector) in keys.iter().zip(&vectors) {
             let squared_norm: f64 = vector.iter().map(|&y| centred(y).powi(2)).sum();
