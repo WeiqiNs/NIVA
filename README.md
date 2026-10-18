@@ -63,9 +63,10 @@ The protocol is generic over the `Ipfe` trait, and the backend follows from the 
   products modulo the field's prime, with ring dimension 16384 and a 278-bit modulus. It is here for speed
   comparisons: its parameters come from the lattice estimator, so its security is heuristic.
 
+Switching backends changes only the scheme: `examples/lattice.rs` is the quickstart with
+
 ```rust
-let scheme = Arc::new(lattice::Lattice::<Field128>::new(Field128::RING_DIMENSION)?);
-let setup = Analyst::setup(&scheme, circuit.clone(), 4, rng)?;
+let scheme = Arc::new(Lattice::<Field128>::new(Field128::RING_DIMENSION)?);
 ```
 
 ## Security notes

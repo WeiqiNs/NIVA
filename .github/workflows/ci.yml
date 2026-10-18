@@ -54,6 +54,7 @@ jobs:
         run: cargo llvm-cov report --show-missing-lines
       - run: cargo bench --bench pear -- --test '/10$'
       - run: cargo run --example quickstart
+      - run: cargo run --example lattice
       - run: cargo run --example costs
       - uses: codecov/codecov-action@v7
         with:

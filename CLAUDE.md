@@ -18,13 +18,13 @@ cargo test --all --features parallel -- --include-ignored
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 cargo llvm-cov --all --fail-uncovered-lines 0
 cargo bench --bench pear -- --test '/10$'
-cargo run --example quickstart && cargo run --example costs
+cargo run --example quickstart && cargo run --example lattice && cargo run --example costs
 cargo deny check && cargo machete
 ```
 
 CI (`.github/workflows/ci.yml`) runs these on pushes, pull requests and a weekly schedule, in three jobs on the latest
 stable Rust: lint, the test suite with `--features parallel` including the ignored full-size tests, and docs; tests
-under coverage, the benchmark smoke run (only the length-10 configurations of both backends) and both examples, then
+under coverage, the benchmark smoke run (only the length-10 configurations of both backends) and the examples, then
 an OIDC upload to Codecov; and the dependency audit. Clippy pedantic is on through `[lints]` in `Cargo.toml`, which
 also declares the `asm` feature value that ark-ff's `MontConfig` derive emits for the multi-limb headroom field. The
 coverage gate is `--fail-uncovered-lines 0`, reached by tests that take each branch. `[profile.dev.package."*"]`
@@ -64,7 +64,8 @@ lattice ciphertext and public-key sizes.
   seeded rng and the small test schemes `clt()` and `lattice()`. Tests that need crate internals live in each module's
   `#[cfg(test)]` block.
 - `benches/pear.rs` (`bench_backend`, one `{backend}/{rule}` group per rule), `examples/quickstart.rs` (the README's
-  example), `examples/costs.rs`.
+  example), `examples/lattice.rs` (the same protocol on `lattice::Lattice` at full ring dimension),
+  `examples/costs.rs`.
 
 ## How it works
 
