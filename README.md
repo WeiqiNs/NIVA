@@ -3,26 +3,23 @@
 [![CI](https://github.com/WeiqiNs/NIVA/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/WeiqiNs/NIVA/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/WeiqiNs/NIVA/graph/badge.svg)](https://codecov.io/gh/WeiqiNs/NIVA)
 
-Many clients each send one encrypted message. The server cannot read them, yet it throws out every malformed input
-and adds up the valid ones, and an analyst learns only the sum. That is private aggregation with input validation, as
-in federated analytics or private telemetry, in a single round and with no interaction between clients.
-
+Clients each send one encrypted message. The server cannot read them, yet it rejects malformed inputs and sums the
+valid ones, and an analyst learns only the total: private aggregation with input validation, in one round.
 NIVA implements PEAR from [Non-Interactive Verifiable Aggregation](https://doi.org/10.56553/popets-2025-0171)
-(PoPETs 2025): each client attaches a fully linear PCP proof from [RustFLPCP](https://github.com/WeiqiNs/RustFLPCP)
-and encrypts both under inner-product functional encryption, so the server checks the proof through function keys
-for the proof's linear queries without ever seeing the input.
+(PoPETs 2025), where each client proves its input valid with a fully linear PCP from
+[RustFLPCP](https://github.com/WeiqiNs/RustFLPCP) and the server checks the proof through inner-product functional
+encryption keys, without decrypting.
 
 ## Highlights
 
-- **Any validity rule.** Clients prove membership in any RustFLPCP circuit: bit vectors, ranges, one-hot votes,
-  set membership, or bounded L2 norms for federated learning.
-- **Two encryption schemes behind one interface.** The protocol is generic over the `Ipfe` trait, with the
-  class-group scheme of [Castagnos, Laguillaumie and Tucker (Asiacrypt 2018)](https://doi.org/10.1007/978-3-030-03329-3_25)
-  that the paper's security proof covers, and a research-grade lattice scheme that encrypts 50 to 180 times faster.
-- **Hardened beyond the paper.** Decoding neutralises an order-2 class-group element that a client could use to make
-  the aggregate undecryptable, and function keys can only be issued in one batch, so no two keys combine into a third.
-- **Pure Rust, parallel and tested.** No C toolchain, a `parallel` feature over all cores, clippy pedantic, and a CI
-  coverage gate that fails on any uncovered line.
+- **Any RustFLPCP circuit** as the validity rule: bit vectors, ranges, one-hot votes, set membership, L2 norms.
+- **Two encryption schemes behind one `Ipfe` trait:** the class-group scheme of
+  [Castagnos, Laguillaumie and Tucker](https://doi.org/10.1007/978-3-030-03329-3_25) that the paper's proof covers,
+  and a research-grade lattice scheme after [Bermudo Mera et al. (PKC 2022)](https://eprint.iacr.org/2021/046) that
+  encrypts over 130 times faster.
+- **Hardened beyond the paper:** decoding neutralises an order-2 class-group element that could make the aggregate
+  undecryptable, and the analyst's key decrypts only the payload, never the proof.
+- **Pure Rust:** a `parallel` feature, clippy pedantic, and a CI coverage gate that fails on any uncovered line.
 
 ## Quick start
 
@@ -53,57 +50,32 @@ let sum = setup.analyst.decrypt(&aggregate)?;
 assert_eq!(sum, [1u64, 1, 2, 1].map(Field128::from));
 ```
 
-The third client's input is not binary, so the server rejects it without decrypting. This is
-`examples/quickstart.rs`; `examples/lattice.rs` runs the same protocol on the lattice scheme by changing one line:
-
-```rust
-use niva::lattice::{Lattice, LatticeField};
-
-let scheme = Arc::new(Lattice::<Field128>::new(Field128::RING_DIMENSION)?);
-```
-
-## How it works
-
-- `Analyst::setup` creates encryption keys as long as the proof vector, draws one set of proof queries, gives the
-  server a function key per query, and keeps a decryption key for the payload only.
-- `Client::encrypt` proves its input satisfies the circuit and encrypts input and proof together.
-- `Server::validate` evaluates the function keys on the ciphertext, which yields the proof's query answers, accepts
-  only if the proof checks out, and keeps just the payload. `Server::aggregate` adds the kept ciphertexts
-  homomorphically together with a fresh encryption of zeros.
-- `Analyst::decrypt` turns the aggregate into the sum of the valid payloads.
+The third input is not binary, so the server drops it. This is `examples/quickstart.rs`; `examples/lattice.rs` runs
+the same protocol with `Lattice::<Field128>::new(Field128::RING_DIMENSION)?` as the scheme.
 
 ## Benchmarks
 
-`cargo bench --bench pear --features parallel` on an AMD Ryzen 7 9800X3D (8 cores, 16 threads), at 128-bit security
-for the class-group scheme (`clt`) and ring dimension 16384 for the lattice scheme. `binary` is `Range::binary(len)`;
-`norm_bound` is `NormBound { len, input_bits: 10, norm_bits: 20, .. }`, the paper's setting. Proving takes under a
-millisecond everywhere.
+`cargo bench --bench pear --features parallel` on an AMD Ryzen 7 9800X3D (16 threads), 128-bit security for the
+class-group scheme and ring dimension 16384 for the lattice scheme, length 100. `norm_bound` is the paper's L2 setting (10-bit inputs, 20-bit norm).
 
-| scheme | rule | len | client encrypt | server validate | aggregate 2 | analyst decrypt |
-|---|---|---|---|---|---|---|
-| clt | binary | 10 | 0.22 s | 0.08 s | 0.08 s | 0.06 s |
-| clt | binary | 100 | 1.68 s | 0.17 s | 0.51 s | 0.13 s |
-| clt | norm_bound | 10 | 3.05 s | 0.26 s | 0.08 s | 0.06 s |
-| clt | norm_bound | 100 | 24.7 s | 0.91 s | 0.51 s | 0.14 s |
-| lattice | binary | 10 | 4.4 ms | 0.26 ms | 4.0 ms | 0.41 ms |
-| lattice | binary | 100 | 12.5 ms | 0.27 ms | 6.3 ms | 2.8 ms |
-| lattice | norm_bound | 10 | 20.1 ms | 0.28 ms | 4.0 ms | 0.41 ms |
-| lattice | norm_bound | 100 | 134 ms | 0.36 ms | 6.0 ms | 2.8 ms |
+| scheme | rule | client encrypt | server validate | analyst decrypt |
+|---|---|---|---|---|
+| class group | binary | 1.68 s | 0.17 s | 0.13 s |
+| class group | norm_bound | 24.7 s | 0.91 s | 0.14 s |
+| lattice | binary | 12.5 ms | 0.27 ms | 2.8 ms |
+| lattice | norm_bound | 134 ms | 0.36 ms | 2.8 ms |
 
-The class-group scheme costs one exponentiation per vector coordinate, so encryption dominates. The lattice scheme
-pays in size instead: ciphertexts of 0.57 to 0.75 MB and a public key of 569 KB per coordinate, 3 GB for
-`norm_bound` at length 100. `cargo run --example costs` prints the sizes for each rule.
+The lattice scheme pays in size: its public key grows by 569 KB per vector coordinate, to 3 GB for `norm_bound`.
+`cargo run --example costs` prints the sizes per rule.
 
 ## Security notes
 
-- Pass a cryptographically secure generator (`rand` 0.8, such as `OsRng`).
-- One query set is reused for every client, which the paper proves sound and zero knowledge.
-- The server learns the queries, so integrity holds only against clients that do not collude with the server, and
-  the analyst must keep its decryption key to itself.
-- Neither scheme handles secrets in constant time.
-- The lattice scheme is for speed comparisons. Its privacy is heuristic, with parameters from the lattice estimator
-  and no reduction to PEAR's privacy game, and its integrity assumes clients encrypt honestly: a client can probe the
-  reused query through its own noise (a key-reuse reaction attack), which a noise ceiling narrows but does not close.
+- Use a cryptographically secure RNG (`rand` 0.8, such as `OsRng`). One query set serves every client, which the
+  paper proves sound and zero knowledge; integrity assumes clients do not collude with the server.
+- Neither scheme is constant time.
+- The lattice scheme is for speed comparisons: its privacy is heuristic (and only at ring dimension 16384; smaller
+  ones are for tests), and a client can probe the reused query through its own noise, which a noise ceiling narrows
+  but does not close.
 
 ## Using it
 
@@ -114,14 +86,13 @@ rust_flpcp = { git = "https://github.com/WeiqiNs/RustFLPCP", rev = "2db89dc351a6
 rand = "0.8"
 ```
 
-Pin the same `rust_flpcp` revision as NIVA's `Cargo.toml`, since circuits from a different revision are a separate
-crate. The `parallel` feature spreads exponentiations, validation and aggregation over threads.
+Pin the same `rust_flpcp` revision as NIVA, since circuits from another revision are a different crate.
 
 ## From the paper
 
-The paper's experiments ran on a Sage prototype with FHE and Bulletproofs baselines, which remains in this
-repository's history at commit `b6d9767`. This crate reimplements PEAR from scratch in Rust, with the paper's
-parameters, and adds the lattice scheme for comparison.
+The paper's experiments and artifact evaluation used a Sage prototype with FHE and Bulletproofs baselines, kept at
+commit [`b6d9767`](https://github.com/WeiqiNs/NIVA/tree/b6d9767); this crate reimplements PEAR in Rust with the
+paper's parameters.
 
 ```bibtex
 @article{acharya2025niva,
@@ -136,18 +107,13 @@ parameters, and adds the lattice scheme for comparison.
 }
 ```
 
-## Related
-
-- [RustFLPCP](https://github.com/WeiqiNs/RustFLPCP): the fully linear PCP engine the proofs come from.
-- [RustPFE](https://github.com/WeiqiNs/RustPFE), [GoPFE](https://github.com/WeiqiNs/GoPFE),
-  [LibPFE](https://github.com/WeiqiNs/LibPFE) and [CudaPFE](https://github.com/WeiqiNs/CudaPFE): pairing-based
-  functional encryption in Rust, Go, C++ and CUDA.
+Related: [RustFLPCP](https://github.com/WeiqiNs/RustFLPCP) (the proof engine), and pairing-based functional
+encryption in [Rust](https://github.com/WeiqiNs/RustPFE), [Go](https://github.com/WeiqiNs/GoPFE),
+[C++](https://github.com/WeiqiNs/LibPFE) and [CUDA](https://github.com/WeiqiNs/CudaPFE).
 
 ## Build and test
 
 ```sh
-cargo test --all
-cargo clippy --all --all-targets -- -D warnings
-cargo llvm-cov --all --fail-uncovered-lines 0
-cargo bench --bench pear
+cargo test --all && cargo clippy --all --all-targets -- -D warnings
+cargo llvm-cov --all --fail-uncovered-lines 0 && cargo bench --bench pear
 ```

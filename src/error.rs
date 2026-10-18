@@ -100,7 +100,7 @@ impl std::error::Error for LatticeError {}
 impl fmt::Display for PearError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Clt(_) => f.write_str("functional encryption failed"),
+            Self::Clt(_) => f.write_str("class-group functional encryption failed"),
             Self::Lattice(_) => f.write_str("lattice functional encryption failed"),
             Self::Flp(_) => f.write_str("validity proof failed"),
             Self::PayloadTooLong {

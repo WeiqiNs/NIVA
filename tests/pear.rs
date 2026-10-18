@@ -202,7 +202,7 @@ fn aggregate_of_no_contributions_decrypts_to_zero() {
     );
 }
 
-fn assert_foreign_rejected<S: Ipfe<Field128>>(scheme: &Arc<S>, foreign_scheme: &Arc<S>)
+fn assert_foreign_rejected<S: Ipfe<Field128>>(scheme: &Arc<S>, other_scheme: &Arc<S>)
 where
     PearError: From<S::Error>,
 {
@@ -214,7 +214,7 @@ where
     let short = S::prefix_ciphertext(ciphertext.clone(), 4).unwrap();
     assert!(server.validate(short).is_none());
 
-    let foreign_setup = Analyst::setup(foreign_scheme, circuit.clone(), 4, &mut rng).unwrap();
+    let foreign_setup = Analyst::setup(other_scheme, circuit.clone(), 4, &mut rng).unwrap();
     let foreign_client = Client::new(circuit, foreign_setup.public_key).unwrap();
     let foreign = foreign_client.encrypt(&input, &mut rng).unwrap();
     assert!(server.validate(foreign).is_none());

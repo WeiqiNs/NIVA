@@ -34,7 +34,8 @@ lattice ciphertext and public-key sizes.
 
 ## Layout
 
-- `src/ipfe.rs`: `Ipfe<F>`, implemented by each backend's scheme type (`clt::Clt`, `lattice::Lattice`) with the
+- `src/ipfe.rs`: `Ipfe<F>` and its `FunctionKeys` return alias, implemented by each backend's scheme type
+  (`clt::Clt`, `lattice::Lattice`) with the
   backend's own error type, which PEAR converts into `PearError` through `From`. `Ipfe::encrypt` and `Ipfe::add` check
   dimensions like their inherent counterparts (`backend_operations_check_dimensions` in `tests/pear.rs`), so
   `Server::aggregate` fails on a contribution from a server with another payload length or ring dimension instead of
@@ -62,7 +63,7 @@ lattice ciphertext and public-key sizes.
   `src/linear_algebra.rs`: `linearly_independent`, shared by both backends' `function_keys`.
 - `src/error.rs`: `CltError`, `LatticeError`, `PearError`. `src/field.rs`: `Field128`.
 - `tests/`: `clt.rs`, `lattice.rs`, `pear.rs` (generic over the backend), `field.rs`, with `tests/common` holding the
-  seeded rng and the small test schemes `clt()` and `lattice()`. Tests that need crate internals live in each module's
+  seeded rng, `TEST_DISCRIMINANT_BITS`, `inner_product`, and the small test schemes `clt()` and `lattice()`. Tests that need crate internals live in each module's
   `#[cfg(test)]` block.
 - `benches/pear.rs` (`bench_backend`, one `{backend}/{rule}` group per rule), `examples/quickstart.rs` (the README's
   example), `examples/lattice.rs` (the same protocol on `lattice::Lattice` at full ring dimension),
