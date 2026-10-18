@@ -58,7 +58,7 @@ where
     let ciphertext = S::encrypt(&setup.public_key, &vector, &mut rng).unwrap();
     let contribution = server.validate(ciphertext.clone()).unwrap();
     let contributions = [contribution.clone(), contribution];
-    let aggregate = server.aggregate(&contributions, &mut rng);
+    let aggregate = server.aggregate(&contributions, &mut rng).unwrap();
     let doubled: Vec<Field128> = config.input[..config.payload_len]
         .iter()
         .map(|x| *x + x)
@@ -123,7 +123,11 @@ fn bench_config<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
             contributions,
             ..
         } = fixture();
-        b.iter(|| server.aggregate(black_box(contributions), &mut rng));
+        b.iter(|| {
+            server
+                .aggregate(black_box(contributions), &mut rng)
+                .unwrap()
+        });
     });
     group.bench_function(id("decrypt"), |b| {
         let Fixture {

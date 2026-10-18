@@ -136,12 +136,8 @@ impl<F: PrimeField> PublicKey<F> {
         right: &Ciphertext<F>,
     ) -> Result<Ciphertext<F>, CltError> {
         check_dimension(left.dimension(), right.dimension())?;
-        Ok(self.add_unchecked(left, right))
-    }
-
-    fn add_unchecked(&self, left: &Ciphertext<F>, right: &Ciphertext<F>) -> Ciphertext<F> {
         let group = self.params.group();
-        Ciphertext {
+        Ok(Ciphertext {
             randomness: group.compose(&left.randomness, &right.randomness),
             coords: left
                 .coords
@@ -150,7 +146,7 @@ impl<F: PrimeField> PublicKey<F> {
                 .map(|(left, right)| group.compose(left, right))
                 .collect(),
             _field: PhantomData,
-        }
+        })
     }
 
     pub fn prefix(&self, len: usize) -> Result<Self, CltError> {
@@ -336,8 +332,8 @@ impl<F: PrimeField> Ipfe<F> for Params<F> {
         public_key: &PublicKey<F>,
         left: &Ciphertext<F>,
         right: &Ciphertext<F>,
-    ) -> Ciphertext<F> {
-        public_key.add_unchecked(left, right)
+    ) -> Result<Ciphertext<F>, CltError> {
+        public_key.add(left, right)
     }
 
     fn decrypt(

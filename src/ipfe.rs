@@ -52,7 +52,7 @@ pub trait Ipfe<F: PrimeField>: Debug {
         public_key: &Self::PublicKey,
         left: &Self::Ciphertext,
         right: &Self::Ciphertext,
-    ) -> Self::Ciphertext;
+    ) -> Result<Self::Ciphertext, Self::Error>;
 
     fn decrypt(
         decryption_key: &Self::DecryptionKey,

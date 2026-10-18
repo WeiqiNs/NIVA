@@ -94,10 +94,12 @@ fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
             *sum += value;
         }
     }
-    let aggregate = server.aggregate(&contributions, &mut rng);
+    let aggregate = server.aggregate(&contributions, &mut rng).unwrap();
     assert_eq!(setup.analyst.decrypt(&aggregate), Ok(expected), "{label}");
 
-    let single = server.aggregate(&[contributions[0].clone()], &mut rng);
+    let single = server
+        .aggregate(&[contributions[0].clone()], &mut rng)
+        .unwrap();
     assert_eq!(
         setup.analyst.decrypt(&single),
         Ok(case.honest[0][..case.payload_len].to_vec()),
@@ -171,7 +173,7 @@ fn honest_clients_aggregate_and_invalid_clients_are_rejected() {
 #[test]
 fn aggregate_of_no_contributions_decrypts_to_zero() {
     let (setup, _, server) = roles(&params(), &Range::binary(4), 3);
-    let aggregate = server.aggregate(&[], &mut rng());
+    let aggregate = server.aggregate(&[], &mut rng()).unwrap();
     assert_eq!(
         setup.analyst.decrypt(&aggregate),
         Ok(vec![Field128::ZERO; 3])
@@ -354,29 +356,35 @@ fn verification_key_debug_is_redacted() {
     );
 }
 
-#[test]
-fn backend_encryption_checks_the_dimension() {
+fn assert_dimensions_checked<S: Ipfe<Field128>>(
+    params: &Arc<S>,
+    mismatch: impl Fn(usize, usize) -> S::Error,
+) where
+    S::Error: PartialEq,
+{
     let mut rng = rng();
-    let message = [Field128::ONE; 5];
-
-    let (public_key, _) = niva::clt::setup(&params(), 3, &mut rng);
+    let (public_key, _) = S::setup(params, 3, &mut rng).unwrap();
     assert_eq!(
-        <Params<Field128> as Ipfe<Field128>>::encrypt(&public_key, &message, &mut rng).err(),
-        Some(CltError::DimensionMismatch {
-            expected: 3,
-            actual: 5,
-        })
+        S::encrypt(&public_key, &[Field128::ONE; 5], &mut rng).err(),
+        Some(mismatch(3, 5))
     );
-
-    let (public_key, _) = lattice::setup(&lattice_params(), 3, &mut rng).unwrap();
+    let ciphertext = S::encrypt(&public_key, &[Field128::ONE; 3], &mut rng).unwrap();
+    let short = S::truncate(ciphertext.clone(), 2).unwrap();
     assert_eq!(
-        <lattice::Params<Field128> as Ipfe<Field128>>::encrypt(&public_key, &message, &mut rng)
-            .err(),
-        Some(LatticeError::DimensionMismatch {
-            expected: 3,
-            actual: 5,
-        })
+        S::add(&public_key, &ciphertext, &short).err(),
+        Some(mismatch(3, 2))
     );
+}
+
+#[test]
+fn backend_operations_check_dimensions() {
+    assert_dimensions_checked(&params(), |expected, actual| CltError::DimensionMismatch {
+        expected,
+        actual,
+    });
+    assert_dimensions_checked(&lattice_params(), |expected, actual| {
+        LatticeError::DimensionMismatch { expected, actual }
+    });
 }
 
 #[test]

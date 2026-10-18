@@ -184,11 +184,7 @@ impl<F: LatticeField> PublicKey<F> {
         check_dimension(left.dimension(), right.dimension())?;
         check_ring(&self.params, &left.randomness)?;
         check_ring(&self.params, &right.randomness)?;
-        Ok(Self::add_unchecked(left, right))
-    }
-
-    fn add_unchecked(left: &Ciphertext<F>, right: &Ciphertext<F>) -> Ciphertext<F> {
-        Ciphertext {
+        Ok(Ciphertext {
             randomness: &left.randomness + &right.randomness,
             coords: left
                 .coords
@@ -196,7 +192,7 @@ impl<F: LatticeField> PublicKey<F> {
                 .zip(&right.coords)
                 .map(|(&left, &right)| left + right)
                 .collect(),
-        }
+        })
     }
 
     pub fn prefix(&self, len: usize) -> Result<Self, LatticeError> {
@@ -376,8 +372,12 @@ impl<F: LatticeField> Ipfe<F> for Params<F> {
         public_key.eval(key, ciphertext)
     }
 
-    fn add(_: &PublicKey<F>, left: &Ciphertext<F>, right: &Ciphertext<F>) -> Ciphertext<F> {
-        PublicKey::add_unchecked(left, right)
+    fn add(
+        public_key: &PublicKey<F>,
+        left: &Ciphertext<F>,
+        right: &Ciphertext<F>,
+    ) -> Result<Ciphertext<F>, LatticeError> {
+        public_key.add(left, right)
     }
 
     fn decrypt(

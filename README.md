@@ -33,7 +33,7 @@ for input in [[1u64, 0, 1, 1], [0, 1, 1, 0], [2, 0, 0, 1]] {
 }
 assert_eq!(contributions.len(), 2);
 
-let aggregate = server.aggregate(&contributions, rng);
+let aggregate = server.aggregate(&contributions, rng)?;
 let sum = setup.analyst.decrypt(&aggregate)?;
 assert_eq!(sum, [1u64, 1, 2, 1].map(Field128::from));
 ```

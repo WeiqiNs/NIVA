@@ -71,13 +71,27 @@ impl<F: PrimeField, S: Ipfe<F>> Clone for Contribution<F, S> {
 }
 
 #[cfg(feature = "parallel")]
-fn tree_reduce<T: Send>(items: Vec<T>, combine: impl Fn(T, T) -> T + Send + Sync) -> Option<T> {
-    items.into_par_iter().reduce_with(combine)
+fn tree_reduce<T: Send, E: Send>(
+    items: Vec<T>,
+    combine: impl Fn(T, T) -> Result<T, E> + Send + Sync,
+) -> Result<Option<T>, E> {
+    items
+        .into_par_iter()
+        .map(Ok)
+        .try_reduce_with(combine)
+        .transpose()
 }
 
 #[cfg(not(feature = "parallel"))]
-fn tree_reduce<T>(items: Vec<T>, combine: impl Fn(T, T) -> T) -> Option<T> {
-    items.into_iter().reduce(combine)
+fn tree_reduce<T, E>(
+    items: Vec<T>,
+    combine: impl Fn(T, T) -> Result<T, E>,
+) -> Result<Option<T>, E> {
+    let mut items = items.into_iter();
+    items
+        .next()
+        .map(|first| items.try_fold(first, combine))
+        .transpose()
 }
 
 impl<F: PrimeField, S: Ipfe<F>> Analyst<F, S>
@@ -203,19 +217,20 @@ where
         &self,
         contributions: &[Contribution<F, S>],
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> S::Ciphertext {
+    ) -> Result<S::Ciphertext, PearError> {
         let payload_key = &self.payload_key;
         let fresh = S::encrypt_zeros(payload_key, rng);
         let ciphertexts = contributions
             .iter()
             .map(|Contribution(ciphertext)| ciphertext.clone())
             .collect();
-        match tree_reduce(ciphertexts, |left, right| {
-            S::add(payload_key, &left, &right)
-        }) {
-            Some(sum) => S::add(payload_key, &fresh, &sum),
+        let sum = tree_reduce(ciphertexts, |left, right| {
+            S::add(payload_key, &left, &right).map_err(PearError::from)
+        })?;
+        Ok(match sum {
+            Some(sum) => S::add(payload_key, &fresh, &sum)?,
             None => fresh,
-        }
+        })
     }
 }
 
