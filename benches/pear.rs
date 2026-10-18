@@ -7,7 +7,7 @@ use criterion::{
 use niva::clt::DISCRIMINANT_BITS;
 use niva::lattice::LatticeField;
 use niva::pear::{Analyst, Contribution, Server};
-use niva::{Field128, Ipfe, clt, lattice};
+use niva::{Field128, Ipfe, PearError, clt, lattice};
 use rust_flpcp::{Circuit, Flp, NormBound, Range};
 use std::cell::OnceCell;
 use std::hint::black_box;
@@ -40,7 +40,10 @@ fn measurement(len: usize, modulus: u64) -> Vec<u64> {
 fn fixture<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
     params: &Arc<S>,
     config: &Config<C>,
-) -> Fixture<S, C> {
+) -> Fixture<S, C>
+where
+    PearError: From<S::Error>,
+{
     let mut rng = StdRng::seed_from_u64(1);
     let circuit = &config.circuit;
     let setup = Analyst::setup(params, circuit.clone(), config.payload_len, &mut rng).unwrap();
@@ -82,7 +85,9 @@ fn bench_config<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
     group: &mut BenchmarkGroup<'_, WallTime>,
     params: &Arc<S>,
     config: &Config<C>,
-) {
+) where
+    PearError: From<S::Error>,
+{
     let mut rng = StdRng::seed_from_u64(2);
     let cell = OnceCell::new();
     let fixture = || cell.get_or_init(|| fixture(params, config));
@@ -133,7 +138,9 @@ fn bench_rule<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
     params: &Arc<S>,
     label: &str,
     config: impl Fn(usize) -> Config<C>,
-) {
+) where
+    PearError: From<S::Error>,
+{
     let mut group = c.benchmark_group(label);
     group.sample_size(10);
     for len in LENS {
@@ -142,7 +149,10 @@ fn bench_rule<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
     group.finish();
 }
 
-fn bench_backend<S: Ipfe<Field128>>(c: &mut Criterion, backend: &str, params: &Arc<S>) {
+fn bench_backend<S: Ipfe<Field128>>(c: &mut Criterion, backend: &str, params: &Arc<S>)
+where
+    PearError: From<S::Error>,
+{
     bench_rule(c, params, &format!("{backend}/binary"), |len| Config {
         len,
         circuit: Range::binary(len),

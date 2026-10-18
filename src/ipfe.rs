@@ -1,10 +1,15 @@
-use crate::error::PearError;
 use ark_ff::PrimeField;
 use ark_std::rand::{CryptoRng, RngCore};
-use std::fmt::{self, Debug};
+use std::fmt::Debug;
 use std::sync::Arc;
 
+type FunctionKeys<F, S> = (
+    Vec<<S as Ipfe<F>>::FunctionKey>,
+    <S as Ipfe<F>>::DecryptionKey,
+);
+
 pub trait Ipfe<F: PrimeField>: Debug {
+    type Error: std::error::Error;
     type PublicKey: Clone + Sync + IpfePublicKey<F, Scheme = Self>;
     type MasterSecretKey;
     type DecryptionKey: Debug;
@@ -15,7 +20,7 @@ pub trait Ipfe<F: PrimeField>: Debug {
         params: &Arc<Self>,
         dimension: usize,
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Result<(Self::PublicKey, Self::MasterSecretKey), PearError>;
+    ) -> Result<(Self::PublicKey, Self::MasterSecretKey), Self::Error>;
 
     fn dimension(public_key: &Self::PublicKey) -> usize;
 
@@ -24,13 +29,13 @@ pub trait Ipfe<F: PrimeField>: Debug {
     fn function_keys(
         secret_key: Self::MasterSecretKey,
         vectors: &[&[F]],
-    ) -> Result<(Vec<Self::FunctionKey>, Self::DecryptionKey), PearError>;
+    ) -> Result<FunctionKeys<F, Self>, Self::Error>;
 
     fn encrypt(
         public_key: &Self::PublicKey,
         message: &[F],
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Result<Self::Ciphertext, PearError>;
+    ) -> Result<Self::Ciphertext, Self::Error>;
 
     fn encrypt_zeros(
         public_key: &Self::PublicKey,
@@ -41,7 +46,7 @@ pub trait Ipfe<F: PrimeField>: Debug {
         public_key: &Self::PublicKey,
         key: &Self::FunctionKey,
         ciphertext: &Self::Ciphertext,
-    ) -> Result<F, PearError>;
+    ) -> Result<F, Self::Error>;
 
     fn add(
         public_key: &Self::PublicKey,
@@ -52,27 +57,21 @@ pub trait Ipfe<F: PrimeField>: Debug {
     fn decrypt(
         decryption_key: &Self::DecryptionKey,
         ciphertext: &Self::Ciphertext,
-    ) -> Result<Vec<F>, PearError>;
+    ) -> Result<Vec<F>, Self::Error>;
 
     fn prefix_public_key(
         public_key: &Self::PublicKey,
         len: usize,
-    ) -> Result<Self::PublicKey, PearError>;
+    ) -> Result<Self::PublicKey, Self::Error>;
 
     fn prefix_decryption_key(
         decryption_key: &Self::DecryptionKey,
         len: usize,
-    ) -> Result<Self::DecryptionKey, PearError>;
+    ) -> Result<Self::DecryptionKey, Self::Error>;
 
-    fn truncate(ciphertext: Self::Ciphertext, len: usize) -> Result<Self::Ciphertext, PearError>;
+    fn truncate(ciphertext: Self::Ciphertext, len: usize) -> Result<Self::Ciphertext, Self::Error>;
 }
 
 pub trait IpfePublicKey<F: PrimeField> {
     type Scheme: Ipfe<F, PublicKey = Self>;
-}
-
-pub(crate) fn redacted(f: &mut fmt::Formatter<'_>, name: &str, dimension: usize) -> fmt::Result {
-    f.debug_struct(name)
-        .field("dimension", &dimension)
-        .finish_non_exhaustive()
 }

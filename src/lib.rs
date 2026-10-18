@@ -1,4 +1,5 @@
 mod class_group;
+mod debug;
 mod error;
 mod field;
 mod ipfe;

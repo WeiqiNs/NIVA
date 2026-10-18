@@ -3,6 +3,7 @@ mod common;
 use ark_ff::{AdditiveGroup, Field};
 use common::{TEST_DISCRIMINANT_BITS, lattice_params, params, rng};
 use niva::clt::{Ciphertext, Params, PublicKey};
+use niva::lattice::MAX_DIMENSION;
 use niva::pear::{Analyst, Client, Contribution, Server, Setup};
 use niva::{CltError, Field128, Ipfe, LatticeError, PearError, lattice};
 use rust_flpcp::{Circuit, Flp, FlpError, MeanVariance, NormBound, Range};
@@ -38,7 +39,10 @@ fn roles<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
     params: &Arc<S>,
     circuit: &C,
     payload_len: usize,
-) -> Roles<S, C> {
+) -> Roles<S, C>
+where
+    PearError: From<S::Error>,
+{
     let setup = Analyst::setup(params, circuit.clone(), payload_len, &mut rng()).unwrap();
     let client = Client::new(circuit.clone(), setup.public_key.clone()).unwrap();
     let server = Server::new(
@@ -53,7 +57,9 @@ fn roles<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
 fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
     params: &Arc<S>,
     case: &Case<C>,
-) {
+) where
+    PearError: From<S::Error>,
+{
     let mut rng = rng();
     let label = format!("{params:?} {:?}", case.circuit);
     let (setup, client, server) = roles(params, &case.circuit, case.payload_len);
@@ -99,7 +105,10 @@ fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
     );
 }
 
-fn assert_cases<S: Ipfe<Field128>>(params: &Arc<S>) {
+fn assert_cases<S: Ipfe<Field128>>(params: &Arc<S>)
+where
+    PearError: From<S::Error>,
+{
     assert_protocol(
         params,
         &Case {
@@ -169,7 +178,10 @@ fn aggregate_of_no_contributions_decrypts_to_zero() {
     );
 }
 
-fn assert_foreign_rejected<S: Ipfe<Field128>>(params: &Arc<S>, foreign_params: &Arc<S>) {
+fn assert_foreign_rejected<S: Ipfe<Field128>>(params: &Arc<S>, foreign_params: &Arc<S>)
+where
+    PearError: From<S::Error>,
+{
     let mut rng = rng();
     let circuit = Range::binary(4);
     let (_, client, server) = roles(params, &circuit, 4);
@@ -203,6 +215,14 @@ fn setup_errors() {
             payload_len: 5,
             input_len: 4,
         })
+    );
+    let oversized = Range::binary(MAX_DIMENSION);
+    assert_eq!(
+        Analyst::setup(&lattice_params(), oversized.clone(), 1, &mut rng).err(),
+        Some(PearError::Lattice(LatticeError::DimensionTooLarge {
+            dimension: shape(oversized).0,
+            maximum: MAX_DIMENSION,
+        }))
     );
 
     let (setup, client, _) = roles(&params(), &Range::binary(4), 4);
@@ -342,20 +362,20 @@ fn backend_encryption_checks_the_dimension() {
     let (public_key, _) = niva::clt::setup(&params(), 3, &mut rng);
     assert_eq!(
         <Params<Field128> as Ipfe<Field128>>::encrypt(&public_key, &message, &mut rng).err(),
-        Some(PearError::Clt(CltError::DimensionMismatch {
+        Some(CltError::DimensionMismatch {
             expected: 3,
             actual: 5,
-        }))
+        })
     );
 
     let (public_key, _) = lattice::setup(&lattice_params(), 3, &mut rng).unwrap();
     assert_eq!(
         <lattice::Params<Field128> as Ipfe<Field128>>::encrypt(&public_key, &message, &mut rng)
             .err(),
-        Some(PearError::Lattice(LatticeError::DimensionMismatch {
+        Some(LatticeError::DimensionMismatch {
             expected: 3,
             actual: 5,
-        }))
+        })
     );
 }
 

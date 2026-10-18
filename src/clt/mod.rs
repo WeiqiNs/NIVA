@@ -3,9 +3,9 @@ mod params;
 pub use params::Params;
 
 use crate::class_group::{FixedBase, Form, multi_exp, pow};
+use crate::debug::redacted;
 use crate::error::CltError;
-use crate::error::PearError;
-use crate::ipfe::{Ipfe, IpfePublicKey, redacted};
+use crate::ipfe::{Ipfe, IpfePublicKey};
 use crate::linear_algebra::linearly_independent;
 use ark_ff::PrimeField;
 use ark_std::cfg_iter;
@@ -279,6 +279,7 @@ impl<F: PrimeField> IpfePublicKey<F> for PublicKey<F> {
 }
 
 impl<F: PrimeField> Ipfe<F> for Params<F> {
+    type Error = CltError;
     type PublicKey = PublicKey<F>;
     type MasterSecretKey = MasterSecretKey<F>;
     type DecryptionKey = DecryptionKey<F>;
@@ -289,7 +290,7 @@ impl<F: PrimeField> Ipfe<F> for Params<F> {
         params: &Arc<Self>,
         dimension: usize,
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Result<(PublicKey<F>, MasterSecretKey<F>), PearError> {
+    ) -> Result<(PublicKey<F>, MasterSecretKey<F>), CltError> {
         Ok(setup(params, dimension, rng))
     }
 
@@ -304,16 +305,16 @@ impl<F: PrimeField> Ipfe<F> for Params<F> {
     fn function_keys(
         secret_key: MasterSecretKey<F>,
         vectors: &[&[F]],
-    ) -> Result<(Vec<FunctionKey<F>>, DecryptionKey<F>), PearError> {
-        Ok(secret_key.function_keys(vectors)?)
+    ) -> Result<(Vec<FunctionKey<F>>, DecryptionKey<F>), CltError> {
+        secret_key.function_keys(vectors)
     }
 
     fn encrypt(
         public_key: &PublicKey<F>,
         message: &[F],
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Result<Ciphertext<F>, PearError> {
-        Ok(public_key.encrypt(message, rng)?)
+    ) -> Result<Ciphertext<F>, CltError> {
+        public_key.encrypt(message, rng)
     }
 
     fn encrypt_zeros(
@@ -327,8 +328,8 @@ impl<F: PrimeField> Ipfe<F> for Params<F> {
         public_key: &PublicKey<F>,
         key: &FunctionKey<F>,
         ciphertext: &Ciphertext<F>,
-    ) -> Result<F, PearError> {
-        Ok(public_key.eval(key, ciphertext)?)
+    ) -> Result<F, CltError> {
+        public_key.eval(key, ciphertext)
     }
 
     fn add(
@@ -342,23 +343,23 @@ impl<F: PrimeField> Ipfe<F> for Params<F> {
     fn decrypt(
         decryption_key: &DecryptionKey<F>,
         ciphertext: &Ciphertext<F>,
-    ) -> Result<Vec<F>, PearError> {
-        Ok(decryption_key.decrypt(ciphertext)?)
+    ) -> Result<Vec<F>, CltError> {
+        decryption_key.decrypt(ciphertext)
     }
 
-    fn prefix_public_key(public_key: &PublicKey<F>, len: usize) -> Result<PublicKey<F>, PearError> {
-        Ok(public_key.prefix(len)?)
+    fn prefix_public_key(public_key: &PublicKey<F>, len: usize) -> Result<PublicKey<F>, CltError> {
+        public_key.prefix(len)
     }
 
     fn prefix_decryption_key(
         decryption_key: &DecryptionKey<F>,
         len: usize,
-    ) -> Result<DecryptionKey<F>, PearError> {
-        Ok(decryption_key.prefix(len)?)
+    ) -> Result<DecryptionKey<F>, CltError> {
+        decryption_key.prefix(len)
     }
 
-    fn truncate(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, PearError> {
-        Ok(ciphertext.prefix(len)?)
+    fn truncate(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, CltError> {
+        ciphertext.prefix(len)
     }
 }
 

@@ -80,7 +80,10 @@ fn tree_reduce<T>(items: Vec<T>, combine: impl Fn(T, T) -> T) -> Option<T> {
     items.into_iter().reduce(combine)
 }
 
-impl<F: PrimeField, S: Ipfe<F>> Analyst<F, S> {
+impl<F: PrimeField, S: Ipfe<F>> Analyst<F, S>
+where
+    PearError: From<S::Error>,
+{
     pub fn setup<C: Circuit<F>>(
         params: &Arc<S>,
         circuit: C,
@@ -117,11 +120,14 @@ impl<F: PrimeField, S: Ipfe<F>> Analyst<F, S> {
     }
 
     pub fn decrypt(&self, aggregate: &S::Ciphertext) -> Result<Vec<F>, PearError> {
-        S::decrypt(&self.secret, aggregate)
+        Ok(S::decrypt(&self.secret, aggregate)?)
     }
 }
 
-impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Client<F, C, S> {
+impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Client<F, C, S>
+where
+    PearError: From<S::Error>,
+{
     pub fn new<K>(circuit: C, public_key: K) -> Result<Self, PearError>
     where
         K: IpfePublicKey<F, Scheme = S>,
@@ -140,11 +146,14 @@ impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Client<F, C, S> {
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<S::Ciphertext, PearError> {
         let vector = self.flp.prove(input, rng)?;
-        S::encrypt(&self.public_key, &vector, rng)
+        Ok(S::encrypt(&self.public_key, &vector, rng)?)
     }
 }
 
-impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Server<F, C, S> {
+impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Server<F, C, S>
+where
+    PearError: From<S::Error>,
+{
     pub fn new(
         circuit: C,
         public_key: S::PublicKey,

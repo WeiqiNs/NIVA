@@ -3,9 +3,9 @@ mod ring;
 
 pub use params::{Headroom150, Headroom150Config, LatticeField, Params};
 
+use crate::debug::redacted;
 use crate::error::LatticeError;
-use crate::error::PearError;
-use crate::ipfe::{Ipfe, IpfePublicKey, redacted};
+use crate::ipfe::{Ipfe, IpfePublicKey};
 use crate::linear_algebra::linearly_independent;
 use crate::sampling::centered_binomial;
 use ark_std::cfg_iter;
@@ -323,6 +323,7 @@ impl<F: LatticeField> IpfePublicKey<F> for PublicKey<F> {
 }
 
 impl<F: LatticeField> Ipfe<F> for Params<F> {
+    type Error = LatticeError;
     type PublicKey = PublicKey<F>;
     type MasterSecretKey = MasterSecretKey<F>;
     type DecryptionKey = DecryptionKey<F>;
@@ -333,8 +334,8 @@ impl<F: LatticeField> Ipfe<F> for Params<F> {
         params: &Arc<Self>,
         dimension: usize,
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Result<(PublicKey<F>, MasterSecretKey<F>), PearError> {
-        Ok(setup(params, dimension, rng)?)
+    ) -> Result<(PublicKey<F>, MasterSecretKey<F>), LatticeError> {
+        setup(params, dimension, rng)
     }
 
     fn dimension(public_key: &PublicKey<F>) -> usize {
@@ -348,16 +349,16 @@ impl<F: LatticeField> Ipfe<F> for Params<F> {
     fn function_keys(
         secret_key: MasterSecretKey<F>,
         vectors: &[&[F]],
-    ) -> Result<(Vec<FunctionKey<F>>, DecryptionKey<F>), PearError> {
-        Ok(secret_key.function_keys(vectors)?)
+    ) -> Result<(Vec<FunctionKey<F>>, DecryptionKey<F>), LatticeError> {
+        secret_key.function_keys(vectors)
     }
 
     fn encrypt(
         public_key: &PublicKey<F>,
         message: &[F],
         rng: &mut (impl CryptoRng + RngCore),
-    ) -> Result<Ciphertext<F>, PearError> {
-        Ok(public_key.encrypt(message, rng)?)
+    ) -> Result<Ciphertext<F>, LatticeError> {
+        public_key.encrypt(message, rng)
     }
 
     fn encrypt_zeros(
@@ -371,8 +372,8 @@ impl<F: LatticeField> Ipfe<F> for Params<F> {
         public_key: &PublicKey<F>,
         key: &FunctionKey<F>,
         ciphertext: &Ciphertext<F>,
-    ) -> Result<F, PearError> {
-        Ok(public_key.eval(key, ciphertext)?)
+    ) -> Result<F, LatticeError> {
+        public_key.eval(key, ciphertext)
     }
 
     fn add(_: &PublicKey<F>, left: &Ciphertext<F>, right: &Ciphertext<F>) -> Ciphertext<F> {
@@ -382,23 +383,26 @@ impl<F: LatticeField> Ipfe<F> for Params<F> {
     fn decrypt(
         decryption_key: &DecryptionKey<F>,
         ciphertext: &Ciphertext<F>,
-    ) -> Result<Vec<F>, PearError> {
-        Ok(decryption_key.decrypt(ciphertext)?)
+    ) -> Result<Vec<F>, LatticeError> {
+        decryption_key.decrypt(ciphertext)
     }
 
-    fn prefix_public_key(public_key: &PublicKey<F>, len: usize) -> Result<PublicKey<F>, PearError> {
-        Ok(public_key.prefix(len)?)
+    fn prefix_public_key(
+        public_key: &PublicKey<F>,
+        len: usize,
+    ) -> Result<PublicKey<F>, LatticeError> {
+        public_key.prefix(len)
     }
 
     fn prefix_decryption_key(
         decryption_key: &DecryptionKey<F>,
         len: usize,
-    ) -> Result<DecryptionKey<F>, PearError> {
-        Ok(decryption_key.prefix(len)?)
+    ) -> Result<DecryptionKey<F>, LatticeError> {
+        decryption_key.prefix(len)
     }
 
-    fn truncate(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, PearError> {
-        Ok(ciphertext.prefix(len)?)
+    fn truncate(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, LatticeError> {
+        ciphertext.prefix(len)
     }
 }
 
