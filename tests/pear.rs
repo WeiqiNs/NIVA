@@ -171,6 +171,28 @@ fn honest_clients_aggregate_and_invalid_clients_are_rejected() {
 }
 
 #[test]
+fn aggregate_rejects_contributions_from_another_server() {
+    let scheme = clt();
+    let circuit = Range::binary(4);
+    let (_, client, server) = roles(&scheme, &circuit, 4);
+    let (_, other_client, other_server) = roles(&scheme, &circuit, 3);
+    let input = [1u64, 0, 1, 1].map(Field128::from);
+    let local = server
+        .validate(client.encrypt(&input, &mut rng()).unwrap())
+        .unwrap();
+    let foreign = other_server
+        .validate(other_client.encrypt(&input, &mut rng()).unwrap())
+        .unwrap();
+    assert_eq!(
+        server.aggregate(&[local, foreign], &mut rng()).err(),
+        Some(PearError::Clt(CltError::DimensionMismatch {
+            expected: 4,
+            actual: 3,
+        }))
+    );
+}
+
+#[test]
 fn aggregate_of_no_contributions_decrypts_to_zero() {
     let (setup, _, server) = roles(&clt(), &Range::binary(4), 3);
     let aggregate = server.aggregate(&[], &mut rng()).unwrap();

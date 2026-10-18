@@ -66,6 +66,8 @@ The protocol is generic over the `Ipfe` trait, and the backend follows from the 
 Switching backends changes only the scheme: `examples/lattice.rs` is the quickstart with
 
 ```rust
+use niva::lattice::{Lattice, LatticeField};
+
 let scheme = Arc::new(Lattice::<Field128>::new(Field128::RING_DIMENSION)?);
 ```
 

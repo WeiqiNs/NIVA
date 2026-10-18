@@ -66,21 +66,21 @@ fn check_prefix(len: usize, dimension: usize) -> Result<(), CltError> {
 }
 
 pub fn setup<F: PrimeField>(
-    params: &Arc<Clt<F>>,
+    scheme: &Arc<Clt<F>>,
     dimension: usize,
     rng: &mut (impl CryptoRng + RngCore),
 ) -> (PublicKey<F>, MasterSecretKey<F>) {
-    let exponents: Vec<IBig> = (0..dimension).map(|_| params.sample_key(rng)).collect();
+    let exponents: Vec<IBig> = (0..dimension).map(|_| scheme.sample_key(rng)).collect();
     let bases = cfg_iter!(exponents)
-        .map(|exponent| params.power_of_generator(exponent))
+        .map(|exponent| scheme.power_of_generator(exponent))
         .collect();
     (
         PublicKey {
-            params: Arc::clone(params),
+            params: Arc::clone(scheme),
             bases,
         },
         MasterSecretKey {
-            params: Arc::clone(params),
+            params: Arc::clone(scheme),
             exponents,
         },
     )
@@ -98,14 +98,6 @@ impl<F: PrimeField> PublicKey<F> {
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<Ciphertext<F>, CltError> {
         check_dimension(self.dimension(), message.len())?;
-        Ok(self.encrypt_unchecked(message, rng))
-    }
-
-    fn encrypt_unchecked(
-        &self,
-        message: &[F],
-        rng: &mut (impl CryptoRng + RngCore),
-    ) -> Ciphertext<F> {
         let params = &self.params;
         let group = params.group();
         let randomness = params.sample_randomness(rng);
@@ -115,11 +107,11 @@ impl<F: PrimeField> PublicKey<F> {
                 group.compose(&params.encode(value), &pow(group, base, &randomness))
             })
             .collect();
-        Ciphertext {
+        Ok(Ciphertext {
             randomness: params.power_of_generator(&randomness),
             coords,
             _field: PhantomData,
-        }
+        })
     }
 
     pub fn eval(&self, key: &FunctionKey<F>, ciphertext: &Ciphertext<F>) -> Result<F, CltError> {
@@ -309,13 +301,6 @@ impl<F: PrimeField> Ipfe<F> for Clt<F> {
         public_key.encrypt(message, rng)
     }
 
-    fn encrypt_zeros(
-        public_key: &PublicKey<F>,
-        rng: &mut (impl CryptoRng + RngCore),
-    ) -> Ciphertext<F> {
-        public_key.encrypt_unchecked(&vec![F::ZERO; public_key.dimension()], rng)
-    }
-
     fn eval(
         public_key: &PublicKey<F>,
         key: &FunctionKey<F>,
@@ -357,7 +342,7 @@ impl<F: PrimeField> Ipfe<F> for Clt<F> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    pub(crate) use super::params::tests::{rng, test_params};
+    pub(crate) use super::params::tests::{rng, test_scheme};
     use super::{Ciphertext, MasterSecretKey, PublicKey, setup};
     use crate::Field128;
     use crate::error::CltError;
@@ -366,7 +351,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     fn keys(dimension: usize) -> (PublicKey<Field128>, MasterSecretKey<Field128>) {
-        setup(&Arc::new(test_params()), dimension, &mut rng())
+        setup(&Arc::new(test_scheme()), dimension, &mut rng())
     }
 
     fn message(len: usize) -> Vec<Field128> {

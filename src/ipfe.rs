@@ -3,7 +3,7 @@ use ark_std::rand::{CryptoRng, RngCore};
 use std::fmt::Debug;
 use std::sync::Arc;
 
-type FunctionKeys<F, S> = (
+pub type FunctionKeys<F, S> = (
     Vec<<S as Ipfe<F>>::FunctionKey>,
     <S as Ipfe<F>>::DecryptionKey,
 );
@@ -36,11 +36,6 @@ pub trait Ipfe<F: PrimeField>: Debug {
         message: &[F],
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<Self::Ciphertext, Self::Error>;
-
-    fn encrypt_zeros(
-        public_key: &Self::PublicKey,
-        rng: &mut (impl CryptoRng + RngCore),
-    ) -> Self::Ciphertext;
 
     fn eval(
         public_key: &Self::PublicKey,

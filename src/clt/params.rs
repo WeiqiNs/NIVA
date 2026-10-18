@@ -198,7 +198,7 @@ pub(crate) mod tests {
         StdRng::seed_from_u64(7)
     }
 
-    pub(crate) fn test_params() -> Clt<Field128> {
+    pub(crate) fn test_scheme() -> Clt<Field128> {
         Clt::generate(TEST_DISCRIMINANT_BITS, &mut rng()).unwrap()
     }
 

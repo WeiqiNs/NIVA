@@ -224,7 +224,7 @@ where
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<S::Ciphertext, PearError> {
         let payload_key = &self.payload_key;
-        let fresh = S::encrypt_zeros(payload_key, rng);
+        let fresh = S::encrypt(payload_key, &vec![F::ZERO; S::dimension(payload_key)], rng)?;
         let ciphertexts = contributions
             .iter()
             .map(|Contribution(ciphertext)| ciphertext.clone())
@@ -243,7 +243,7 @@ where
 mod tests {
     use super::{Analyst, Client, Server};
     use crate::Field128;
-    use crate::clt::tests::{rng, shift_randomness, test_params};
+    use crate::clt::tests::{rng, shift_randomness, test_scheme};
     use crate::lattice::tests::{magnitude, push_past_ceiling};
     use ark_ff::{AdditiveGroup, Field};
     use rust_flpcp::Range;
@@ -253,7 +253,7 @@ mod tests {
     fn validate_rejects_inconsistent_randomness() {
         let mut rng = rng();
         let circuit = Range::binary(4);
-        let setup = Analyst::setup(&Arc::new(test_params()), circuit.clone(), 4, &mut rng).unwrap();
+        let setup = Analyst::setup(&Arc::new(test_scheme()), circuit.clone(), 4, &mut rng).unwrap();
         let client = Client::new(circuit.clone(), setup.public_key.clone()).unwrap();
         let server =
             Server::new(circuit, setup.public_key.clone(), setup.verification_key).unwrap();
@@ -271,7 +271,7 @@ mod tests {
     fn validate_rejects_noise_above_the_ceiling() {
         let mut rng = rng();
         let circuit = Range::binary(4);
-        let scheme = Arc::new(crate::lattice::tests::test_params());
+        let scheme = Arc::new(crate::lattice::tests::test_scheme());
         let setup = Analyst::setup(&scheme, circuit.clone(), 4, &mut rng).unwrap();
         let client = Client::new(circuit.clone(), setup.public_key.clone()).unwrap();
         let server = Server::new(

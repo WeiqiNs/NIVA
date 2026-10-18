@@ -294,7 +294,7 @@ pub(crate) mod tests {
         StdRng::seed_from_u64(5)
     }
 
-    pub(crate) fn test_params() -> Lattice<Field128> {
+    pub(crate) fn test_scheme() -> Lattice<Field128> {
         Lattice::new(TEST_RING_DIMENSION).unwrap()
     }
 
@@ -343,7 +343,7 @@ pub(crate) mod tests {
             + variance.log2();
         assert!(log2(&Headroom150::MODULUS) - 2.0 >= worst_case_noise);
 
-        let params = test_params();
+        let params = test_scheme();
         assert_eq!(params.ring_dimension(), TEST_RING_DIMENSION);
         assert_eq!(
             format!("{params:?}"),

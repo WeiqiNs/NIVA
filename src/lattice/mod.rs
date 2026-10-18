@@ -74,7 +74,7 @@ fn check_ring<F: LatticeField>(
 }
 
 pub fn setup<F: LatticeField>(
-    params: &Arc<Lattice<F>>,
+    scheme: &Arc<Lattice<F>>,
     dimension: usize,
     rng: &mut (impl CryptoRng + RngCore),
 ) -> Result<(PublicKey<F>, MasterSecretKey<F>), LatticeError> {
@@ -84,30 +84,30 @@ pub fn setup<F: LatticeField>(
             maximum: MAX_DIMENSION,
         });
     }
-    let mask = params.sample_uniform(rng);
+    let mask = scheme.sample_uniform(rng);
     let coefficients: Vec<[Vec<i64>; 2]> = (0..dimension)
         .map(|_| {
             [
-                params.sample_coefficients(rng),
-                params.sample_coefficients(rng),
+                scheme.sample_coefficients(rng),
+                scheme.sample_coefficients(rng),
             ]
         })
         .collect();
     let (secrets, bases) = cfg_iter!(coefficients)
         .map(|[secret, error]| {
-            let secret = params.forward(secret);
-            let base = &(&mask * &secret) + &params.forward(error);
+            let secret = scheme.forward(secret);
+            let base = &(&mask * &secret) + &scheme.forward(error);
             (secret, base)
         })
         .unzip();
     Ok((
         PublicKey {
-            params: Arc::clone(params),
+            params: Arc::clone(scheme),
             mask: Arc::new(mask),
             bases: Arc::new(bases),
         },
         MasterSecretKey {
-            params: Arc::clone(params),
+            params: Arc::clone(scheme),
             secrets,
         },
     ))
@@ -125,14 +125,6 @@ impl<F: LatticeField> PublicKey<F> {
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<Ciphertext<F>, LatticeError> {
         check_dimension(self.dimension(), message.len())?;
-        Ok(self.encrypt_unchecked(message, rng))
-    }
-
-    fn encrypt_unchecked(
-        &self,
-        message: &[F],
-        rng: &mut (impl CryptoRng + RngCore),
-    ) -> Ciphertext<F> {
         let params = &self.params;
         let randomness = params.forward(&params.sample_coefficients(rng));
         let offset = params.forward(&params.sample_coefficients(rng));
@@ -146,10 +138,10 @@ impl<F: LatticeField> PublicKey<F> {
                     + params.encode(value)
             })
             .collect();
-        Ciphertext {
+        Ok(Ciphertext {
             randomness: &(self.mask.as_ref() * &randomness) + &offset,
             coords,
-        }
+        })
     }
 
     pub fn eval(
@@ -353,13 +345,6 @@ impl<F: LatticeField> Ipfe<F> for Lattice<F> {
         public_key.encrypt(message, rng)
     }
 
-    fn encrypt_zeros(
-        public_key: &PublicKey<F>,
-        rng: &mut (impl CryptoRng + RngCore),
-    ) -> Ciphertext<F> {
-        public_key.encrypt_unchecked(&vec![F::ZERO; public_key.dimension()], rng)
-    }
-
     fn eval(
         public_key: &PublicKey<F>,
         key: &FunctionKey<F>,
@@ -404,7 +389,7 @@ impl<F: LatticeField> Ipfe<F> for Lattice<F> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    pub(crate) use super::params::tests::test_params;
+    pub(crate) use super::params::tests::test_scheme;
     use super::params::tests::{TEST_RING_DIMENSION, integer, rng};
     use super::{Ciphertext, MasterSecretKey, PublicKey, Residue, setup};
     use crate::Field128;
@@ -416,7 +401,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     fn keys(dimension: usize) -> (PublicKey<Field128>, MasterSecretKey<Field128>) {
-        setup(&Arc::new(test_params()), dimension, &mut rng()).unwrap()
+        setup(&Arc::new(test_scheme()), dimension, &mut rng()).unwrap()
     }
 
     fn random(len: usize, rng: &mut impl ark_std::rand::Rng) -> Vec<Field128> {

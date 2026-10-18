@@ -13,4 +13,4 @@ pub mod pear;
 
 pub use error::{CltError, LatticeError, PearError};
 pub use field::{Field128, Field128Config};
-pub use ipfe::Ipfe;
+pub use ipfe::{FunctionKeys, Ipfe};
