@@ -1,16 +1,23 @@
 mod common;
 
 use ark_ff::{AdditiveGroup, Field};
-use common::{TEST_DISCRIMINANT_BITS, params, rng};
-use niva::clt::{Ciphertext, Params, PublicKey};
+use common::{TEST_DISCRIMINANT_BITS, clt, lattice, rng};
+use niva::clt::Clt;
+use niva::lattice::{Lattice, MAX_DIMENSION};
 use niva::pear::{Analyst, Client, Contribution, Server, Setup};
-use niva::{CltError, Field128, PearError};
+use niva::{CltError, Field128, Ipfe, LatticeError, PearError};
 use rust_flpcp::{Circuit, Flp, FlpError, MeanVariance, NormBound, Range};
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::Debug;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+
+type Roles<S, C> = (
+    Setup<Field128, S>,
+    Client<Field128, C, S>,
+    Server<Field128, C, S>,
+);
 
 struct Case<C> {
     circuit: C,
@@ -28,11 +35,15 @@ fn shape<C: Circuit<Field128>>(circuit: C) -> (usize, usize) {
     (flp.vector_len(), flp.query_count())
 }
 
-fn roles<C: Circuit<Field128> + Clone>(
+fn roles<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
+    scheme: &Arc<S>,
     circuit: &C,
     payload_len: usize,
-) -> (Setup<Field128>, Client<Field128, C>, Server<Field128, C>) {
-    let setup = Analyst::setup(&params(), circuit.clone(), payload_len, &mut rng()).unwrap();
+) -> Roles<S, C>
+where
+    PearError: From<S::Error>,
+{
+    let setup = Analyst::setup(scheme, circuit.clone(), payload_len, &mut rng()).unwrap();
     let client = Client::new(circuit.clone(), setup.public_key.clone()).unwrap();
     let server = Server::new(
         circuit.clone(),
@@ -43,12 +54,17 @@ fn roles<C: Circuit<Field128> + Clone>(
     (setup, client, server)
 }
 
-fn assert_protocol<C: Circuit<Field128> + Clone + Debug>(case: &Case<C>) {
+fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
+    scheme: &Arc<S>,
+    case: &Case<C>,
+) where
+    PearError: From<S::Error>,
+{
     let mut rng = rng();
-    let label = format!("{:?}", case.circuit);
-    let (setup, client, server) = roles(&case.circuit, case.payload_len);
+    let label = format!("{scheme:?} {:?}", case.circuit);
+    let (setup, client, server) = roles(scheme, &case.circuit, case.payload_len);
 
-    let contributions: Vec<Contribution<Field128>> = case
+    let contributions: Vec<Contribution<Field128, S>> = case
         .honest
         .iter()
         .map(|input| {
@@ -61,14 +77,14 @@ fn assert_protocol<C: Circuit<Field128> + Clone + Debug>(case: &Case<C>) {
 
     let flp = Flp::new(case.circuit.clone()).unwrap();
     let vector = flp.prove(&case.honest[0], &mut rng).unwrap();
-    let public_key = &setup.public_key;
-    let untampered = public_key.encrypt(&vector, &mut rng).unwrap();
+    let public_key = &setup.public_key.0;
+    let untampered = S::encrypt(public_key, &vector, &mut rng).unwrap();
     assert!(server.validate(untampered).is_some(), "{label}");
     let input_len = case.circuit.input_len();
     for position in [0, input_len, input_len + 1, flp.vector_len() - 1] {
         let mut tampered = vector.clone();
         tampered[position] += Field128::ONE;
-        let ciphertext = public_key.encrypt(&tampered, &mut rng).unwrap();
+        let ciphertext = S::encrypt(public_key, &tampered, &mut rng).unwrap();
         assert!(server.validate(ciphertext).is_none(), "{label} {position}");
     }
 
@@ -78,22 +94,36 @@ fn assert_protocol<C: Circuit<Field128> + Clone + Debug>(case: &Case<C>) {
             *sum += value;
         }
     }
-    let aggregate = server.aggregate(&contributions, &mut rng);
+    let aggregate = server.aggregate(&contributions, &mut rng).unwrap();
     assert_eq!(setup.analyst.decrypt(&aggregate), Ok(expected), "{label}");
+
+    let single = server
+        .aggregate(&[contributions[0].clone()], &mut rng)
+        .unwrap();
+    assert_eq!(
+        setup.analyst.decrypt(&single),
+        Ok(case.honest[0][..case.payload_len].to_vec()),
+        "{label}"
+    );
 }
 
-#[test]
-fn honest_clients_aggregate_and_invalid_clients_are_rejected() {
-    assert_protocol(&Case {
-        circuit: Range::binary(4),
-        payload_len: 4,
-        honest: vec![
-            values(&[1, 0, 1, 1]),
-            values(&[0, 1, 1, 0]),
-            values(&[1, 1, 1, 1]),
-        ],
-        invalid: values(&[2, 0, 0, 1]),
-    });
+fn assert_cases<S: Ipfe<Field128>>(scheme: &Arc<S>)
+where
+    PearError: From<S::Error>,
+{
+    assert_protocol(
+        scheme,
+        &Case {
+            circuit: Range::binary(4),
+            payload_len: 4,
+            honest: vec![
+                values(&[1, 0, 1, 1]),
+                values(&[0, 1, 1, 0]),
+                values(&[1, 1, 1, 1]),
+            ],
+            invalid: values(&[2, 0, 0, 1]),
+        },
+    );
 
     let norm_bound = NormBound {
         len: 3,
@@ -101,15 +131,18 @@ fn honest_clients_aggregate_and_invalid_clients_are_rejected() {
         norm_bits: 6,
         square_chunk: None,
     };
-    assert_protocol(&Case {
-        honest: [[1, 2, 3], [7, 0, 0], [3, 3, 3]]
-            .iter()
-            .map(|values| norm_bound.encode(values))
-            .collect(),
-        invalid: norm_bound.encode(&[7, 7, 7]),
-        circuit: norm_bound,
-        payload_len: 3,
-    });
+    assert_protocol(
+        scheme,
+        &Case {
+            honest: [[1, 2, 3], [7, 0, 0], [3, 3, 3]]
+                .iter()
+                .map(|values| norm_bound.encode(values))
+                .collect(),
+            invalid: norm_bound.encode(&[7, 7, 7]),
+            circuit: norm_bound,
+            payload_len: 3,
+        },
+    );
 
     let mean_variance = MeanVariance {
         len: 2,
@@ -117,39 +150,71 @@ fn honest_clients_aggregate_and_invalid_clients_are_rejected() {
     };
     let mut wrong_square = mean_variance.encode(&[3, 5]);
     wrong_square[2] += Field128::ONE;
-    assert_protocol(&Case {
-        honest: [[0, 7], [3, 5], [6, 1]]
-            .iter()
-            .map(|values| mean_variance.encode(values))
-            .collect(),
-        invalid: wrong_square,
-        circuit: mean_variance,
-        payload_len: 4,
-    });
+    assert_protocol(
+        scheme,
+        &Case {
+            honest: [[0, 7], [3, 5], [6, 1]]
+                .iter()
+                .map(|values| mean_variance.encode(values))
+                .collect(),
+            invalid: wrong_square,
+            circuit: mean_variance,
+            payload_len: 4,
+        },
+    );
+}
+
+#[test]
+fn honest_clients_aggregate_and_invalid_clients_are_rejected() {
+    assert_cases(&clt());
+    assert_cases(&lattice());
+}
+
+#[test]
+fn aggregate_rejects_contributions_from_another_server() {
+    let scheme = clt();
+    let circuit = Range::binary(4);
+    let (_, client, server) = roles(&scheme, &circuit, 4);
+    let (_, other_client, other_server) = roles(&scheme, &circuit, 3);
+    let input = [1u64, 0, 1, 1].map(Field128::from);
+    let local = server
+        .validate(client.encrypt(&input, &mut rng()).unwrap())
+        .unwrap();
+    let foreign = other_server
+        .validate(other_client.encrypt(&input, &mut rng()).unwrap())
+        .unwrap();
+    assert_eq!(
+        server.aggregate(&[local, foreign], &mut rng()).err(),
+        Some(PearError::Clt(CltError::DimensionMismatch {
+            expected: 4,
+            actual: 3,
+        }))
+    );
 }
 
 #[test]
 fn aggregate_of_no_contributions_decrypts_to_zero() {
-    let (setup, _, server) = roles(&Range::binary(4), 3);
-    let aggregate = server.aggregate(&[], &mut rng());
+    let (setup, _, server) = roles(&clt(), &Range::binary(4), 3);
+    let aggregate = server.aggregate(&[], &mut rng()).unwrap();
     assert_eq!(
         setup.analyst.decrypt(&aggregate),
         Ok(vec![Field128::ZERO; 3])
     );
 }
 
-#[test]
-fn server_rejects_foreign_ciphertexts() {
+fn assert_foreign_rejected<S: Ipfe<Field128>>(scheme: &Arc<S>, other_scheme: &Arc<S>)
+where
+    PearError: From<S::Error>,
+{
     let mut rng = rng();
     let circuit = Range::binary(4);
-    let (_, client, server) = roles(&circuit, 4);
+    let (_, client, server) = roles(scheme, &circuit, 4);
     let input = values(&[1, 0, 0, 1]);
     let ciphertext = client.encrypt(&input, &mut rng).unwrap();
-    let short = ciphertext.clone().prefix(4).unwrap();
+    let short = S::prefix_ciphertext(ciphertext.clone(), 4).unwrap();
     assert!(server.validate(short).is_none());
 
-    let foreign_params = Arc::new(Params::generate(TEST_DISCRIMINANT_BITS + 10, &mut rng).unwrap());
-    let foreign_setup = Analyst::setup(&foreign_params, circuit.clone(), 4, &mut rng).unwrap();
+    let foreign_setup = Analyst::setup(other_scheme, circuit.clone(), 4, &mut rng).unwrap();
     let foreign_client = Client::new(circuit, foreign_setup.public_key).unwrap();
     let foreign = foreign_client.encrypt(&input, &mut rng).unwrap();
     assert!(server.validate(foreign).is_none());
@@ -157,18 +222,34 @@ fn server_rejects_foreign_ciphertexts() {
 }
 
 #[test]
+fn server_rejects_foreign_ciphertexts() {
+    let foreign_scheme = Arc::new(Clt::generate(TEST_DISCRIMINANT_BITS + 10, &mut rng()).unwrap());
+    assert_foreign_rejected(&clt(), &foreign_scheme);
+    let lattice = lattice();
+    assert_foreign_rejected(&lattice, &lattice);
+}
+
+#[test]
 fn setup_errors() {
     let mut rng = rng();
     assert_eq!(
-        Analyst::setup(&params(), Range::binary(4), 5, &mut rng).err(),
+        Analyst::setup(&clt(), Range::binary(4), 5, &mut rng).err(),
         Some(PearError::PayloadTooLong {
             payload_len: 5,
             input_len: 4,
         })
     );
+    let oversized = Range::binary(MAX_DIMENSION);
+    assert_eq!(
+        Analyst::setup(&lattice(), oversized.clone(), 1, &mut rng).err(),
+        Some(PearError::Lattice(LatticeError::DimensionTooLarge {
+            dimension: shape(oversized).0,
+            maximum: MAX_DIMENSION,
+        }))
+    );
 
-    let (setup, client, _) = roles(&Range::binary(4), 4);
-    let public_key: &PublicKey<Field128> = &setup.public_key;
+    let (setup, client, _) = roles(&clt(), &Range::binary(4), 4);
+    let public_key = &setup.public_key;
     assert_eq!(
         Client::new(Range::binary(8), public_key.clone()).err(),
         Some(PearError::CircuitMismatch)
@@ -198,7 +279,7 @@ fn setup_errors() {
         Some(PearError::CircuitMismatch)
     );
 
-    let (wider_setup, _, _) = roles(&Range::binary(8), 4);
+    let (wider_setup, _, _) = roles(&clt(), &Range::binary(8), 4);
     assert_eq!(shape(Range::binary(8)).1, shape(Range::binary(4)).1);
     assert_ne!(shape(Range::binary(8)).0, shape(Range::binary(4)).0);
     assert_eq!(
@@ -225,7 +306,7 @@ fn setup_errors() {
         shape(more_queries.clone()).0,
         shape(fewer_queries.clone()).0
     );
-    let (fewer_queries_setup, _, _) = roles(&fewer_queries, 2);
+    let (fewer_queries_setup, _, _) = roles(&clt(), &fewer_queries, 2);
     assert_eq!(
         Server::new(
             more_queries,
@@ -243,7 +324,7 @@ fn setup_errors() {
             actual: 3,
         }))
     );
-    let full: Ciphertext<Field128> = client.encrypt(&values(&[1, 0, 1, 0]), &mut rng).unwrap();
+    let full = client.encrypt(&values(&[1, 0, 1, 0]), &mut rng).unwrap();
     assert_eq!(
         setup.analyst.decrypt(&full).err(),
         Some(PearError::Clt(CltError::DimensionMismatch {
@@ -257,6 +338,7 @@ fn setup_errors() {
 fn error_messages_are_distinct_lowercase_sentences() {
     let errors = [
         PearError::Clt(CltError::NotInSubgroup),
+        PearError::Lattice(LatticeError::NoiseTooLarge),
         PearError::Flp(FlpError::NoOutputs),
         PearError::PayloadTooLong {
             payload_len: 5,
@@ -278,6 +360,7 @@ fn error_messages_are_distinct_lowercase_sentences() {
         sources,
         [
             Some(CltError::NotInSubgroup.to_string()),
+            Some(LatticeError::NoiseTooLarge.to_string()),
             Some(FlpError::NoOutputs.to_string()),
             None,
             None,
@@ -287,23 +370,55 @@ fn error_messages_are_distinct_lowercase_sentences() {
 
 #[test]
 fn verification_key_debug_is_redacted() {
-    let (setup, _, _) = roles(&Range::binary(4), 3);
+    let (setup, _, _) = roles(&clt(), &Range::binary(4), 3);
     assert_eq!(
         format!("{:?}", setup.verification_key),
         "VerificationKey { queries: 2, payload_len: 3, .. }"
     );
 }
 
+fn assert_dimensions_checked<S: Ipfe<Field128>>(
+    scheme: &Arc<S>,
+    mismatch: impl Fn(usize, usize) -> S::Error,
+) where
+    S::Error: PartialEq,
+{
+    let mut rng = rng();
+    let (public_key, _) = S::setup(scheme, 3, &mut rng).unwrap();
+    assert_eq!(
+        S::encrypt(&public_key, &[Field128::ONE; 5], &mut rng).err(),
+        Some(mismatch(3, 5))
+    );
+    let ciphertext = S::encrypt(&public_key, &[Field128::ONE; 3], &mut rng).unwrap();
+    let short = S::prefix_ciphertext(ciphertext.clone(), 2).unwrap();
+    assert_eq!(
+        S::add(&public_key, &ciphertext, &short).err(),
+        Some(mismatch(3, 2))
+    );
+}
+
+#[test]
+fn backend_operations_check_dimensions() {
+    assert_dimensions_checked(&clt(), |expected, actual| CltError::DimensionMismatch {
+        expected,
+        actual,
+    });
+    assert_dimensions_checked(&lattice(), |expected, actual| {
+        LatticeError::DimensionMismatch { expected, actual }
+    });
+}
+
 #[test]
 fn protocol_types_are_thread_safe() {
     fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<PublicKey<Field128>>();
     assert_send_sync::<niva::clt::MasterSecretKey<Field128>>();
-    assert_send_sync::<niva::clt::DecryptionKey<Field128>>();
-    assert_send_sync::<niva::clt::FunctionKey<Field128>>();
-    assert_send_sync::<Ciphertext<Field128>>();
     assert_send_sync::<Analyst<Field128>>();
     assert_send_sync::<Client<Field128, Range>>();
     assert_send_sync::<Server<Field128, Range>>();
     assert_send_sync::<Contribution<Field128>>();
+    assert_send_sync::<niva::lattice::MasterSecretKey<Field128>>();
+    assert_send_sync::<Analyst<Field128, Lattice<Field128>>>();
+    assert_send_sync::<Client<Field128, Range, Lattice<Field128>>>();
+    assert_send_sync::<Server<Field128, Range, Lattice<Field128>>>();
+    assert_send_sync::<Contribution<Field128, Lattice<Field128>>>();
 }

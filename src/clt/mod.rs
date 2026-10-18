@@ -1,10 +1,13 @@
 mod params;
 
-pub use params::Params;
+pub use params::Clt;
 
 use crate::class_group::{FixedBase, Form, multi_exp, pow};
+use crate::debug::redacted;
 use crate::error::CltError;
-use ark_ff::{Field, PrimeField};
+use crate::ipfe::Ipfe;
+use crate::linear_algebra::linearly_independent;
+use ark_ff::PrimeField;
 use ark_std::cfg_iter;
 use ark_std::rand::{CryptoRng, RngCore};
 use dashu_int::IBig;
@@ -20,17 +23,17 @@ pub const DISCRIMINANT_BITS: u32 = 1827;
 
 #[derive(Clone, Debug)]
 pub struct PublicKey<F> {
-    params: Arc<Params<F>>,
+    params: Arc<Clt<F>>,
     bases: Vec<Form>,
 }
 
 pub struct MasterSecretKey<F> {
-    params: Arc<Params<F>>,
+    params: Arc<Clt<F>>,
     exponents: Vec<IBig>,
 }
 
 pub struct DecryptionKey<F> {
-    params: Arc<Params<F>>,
+    params: Arc<Clt<F>>,
     exponents: Vec<IBig>,
 }
 
@@ -62,50 +65,22 @@ fn check_prefix(len: usize, dimension: usize) -> Result<(), CltError> {
     Ok(())
 }
 
-fn redacted(f: &mut fmt::Formatter<'_>, name: &str, dimension: usize) -> fmt::Result {
-    f.debug_struct(name)
-        .field("dimension", &dimension)
-        .finish_non_exhaustive()
-}
-
-fn linearly_independent<F: Field>(vectors: &[&[F]]) -> bool {
-    let mut rows: Vec<Vec<F>> = vectors.iter().map(|vector| vector.to_vec()).collect();
-    let columns = rows.first().map_or(0, Vec::len);
-    let mut rank = 0;
-    for column in 0..columns {
-        let Some(offset) = rows[rank..].iter().position(|row| !row[column].is_zero()) else {
-            continue;
-        };
-        rows.swap(rank, rank + offset);
-        let (done, rest) = rows.split_at_mut(rank + 1);
-        let pivot_row = &done[rank];
-        for row in rest {
-            let factor = row[column];
-            for (entry, &pivot_entry) in row.iter_mut().zip(pivot_row) {
-                *entry = *entry * pivot_row[column] - factor * pivot_entry;
-            }
-        }
-        rank += 1;
-    }
-    rank == rows.len()
-}
-
 pub fn setup<F: PrimeField>(
-    params: &Arc<Params<F>>,
+    scheme: &Arc<Clt<F>>,
     dimension: usize,
     rng: &mut (impl CryptoRng + RngCore),
 ) -> (PublicKey<F>, MasterSecretKey<F>) {
-    let exponents: Vec<IBig> = (0..dimension).map(|_| params.sample_key(rng)).collect();
+    let exponents: Vec<IBig> = (0..dimension).map(|_| scheme.sample_key(rng)).collect();
     let bases = cfg_iter!(exponents)
-        .map(|exponent| params.power_of_generator(exponent))
+        .map(|exponent| scheme.power_of_generator(exponent))
         .collect();
     (
         PublicKey {
-            params: Arc::clone(params),
+            params: Arc::clone(scheme),
             bases,
         },
         MasterSecretKey {
-            params: Arc::clone(params),
+            params: Arc::clone(scheme),
             exponents,
         },
     )
@@ -123,14 +98,6 @@ impl<F: PrimeField> PublicKey<F> {
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<Ciphertext<F>, CltError> {
         check_dimension(self.dimension(), message.len())?;
-        Ok(self.encrypt_unchecked(message, rng))
-    }
-
-    pub(crate) fn encrypt_unchecked(
-        &self,
-        message: &[F],
-        rng: &mut (impl CryptoRng + RngCore),
-    ) -> Ciphertext<F> {
         let params = &self.params;
         let group = params.group();
         let randomness = params.sample_randomness(rng);
@@ -140,11 +107,11 @@ impl<F: PrimeField> PublicKey<F> {
                 group.compose(&params.encode(value), &pow(group, base, &randomness))
             })
             .collect();
-        Ciphertext {
+        Ok(Ciphertext {
             randomness: params.power_of_generator(&randomness),
             coords,
             _field: PhantomData,
-        }
+        })
     }
 
     pub fn eval(&self, key: &FunctionKey<F>, ciphertext: &Ciphertext<F>) -> Result<F, CltError> {
@@ -161,16 +128,8 @@ impl<F: PrimeField> PublicKey<F> {
         right: &Ciphertext<F>,
     ) -> Result<Ciphertext<F>, CltError> {
         check_dimension(left.dimension(), right.dimension())?;
-        Ok(self.add_unchecked(left, right))
-    }
-
-    pub(crate) fn add_unchecked(
-        &self,
-        left: &Ciphertext<F>,
-        right: &Ciphertext<F>,
-    ) -> Ciphertext<F> {
         let group = self.params.group();
-        Ciphertext {
+        Ok(Ciphertext {
             randomness: group.compose(&left.randomness, &right.randomness),
             coords: left
                 .coords
@@ -179,7 +138,7 @@ impl<F: PrimeField> PublicKey<F> {
                 .map(|(left, right)| group.compose(left, right))
                 .collect(),
             _field: PhantomData,
-        }
+        })
     }
 
     pub fn prefix(&self, len: usize) -> Result<Self, CltError> {
@@ -210,7 +169,7 @@ impl<F: PrimeField> MasterSecretKey<F> {
         let keys = vectors
             .iter()
             .map(|vector| {
-                let coeffs: Vec<IBig> = vector.iter().map(|&value| Params::lift(value)).collect();
+                let coeffs: Vec<IBig> = vector.iter().map(|&value| Clt::lift(value)).collect();
                 let secret = coeffs
                     .iter()
                     .zip(&self.exponents)
@@ -303,9 +262,87 @@ impl<F> Ciphertext<F> {
     }
 }
 
+impl<F: PrimeField> Ipfe<F> for Clt<F> {
+    type Error = CltError;
+    type PublicKey = PublicKey<F>;
+    type MasterSecretKey = MasterSecretKey<F>;
+    type DecryptionKey = DecryptionKey<F>;
+    type FunctionKey = FunctionKey<F>;
+    type Ciphertext = Ciphertext<F>;
+
+    fn setup(
+        scheme: &Arc<Self>,
+        dimension: usize,
+        rng: &mut (impl CryptoRng + RngCore),
+    ) -> Result<(PublicKey<F>, MasterSecretKey<F>), CltError> {
+        Ok(setup(scheme, dimension, rng))
+    }
+
+    fn dimension(public_key: &PublicKey<F>) -> usize {
+        public_key.dimension()
+    }
+
+    fn key_dimension(key: &FunctionKey<F>) -> usize {
+        key.dimension()
+    }
+
+    fn function_keys(
+        secret_key: MasterSecretKey<F>,
+        vectors: &[&[F]],
+    ) -> Result<(Vec<FunctionKey<F>>, DecryptionKey<F>), CltError> {
+        secret_key.function_keys(vectors)
+    }
+
+    fn encrypt(
+        public_key: &PublicKey<F>,
+        message: &[F],
+        rng: &mut (impl CryptoRng + RngCore),
+    ) -> Result<Ciphertext<F>, CltError> {
+        public_key.encrypt(message, rng)
+    }
+
+    fn eval(
+        public_key: &PublicKey<F>,
+        key: &FunctionKey<F>,
+        ciphertext: &Ciphertext<F>,
+    ) -> Result<F, CltError> {
+        public_key.eval(key, ciphertext)
+    }
+
+    fn add(
+        public_key: &PublicKey<F>,
+        left: &Ciphertext<F>,
+        right: &Ciphertext<F>,
+    ) -> Result<Ciphertext<F>, CltError> {
+        public_key.add(left, right)
+    }
+
+    fn decrypt(
+        decryption_key: &DecryptionKey<F>,
+        ciphertext: &Ciphertext<F>,
+    ) -> Result<Vec<F>, CltError> {
+        decryption_key.decrypt(ciphertext)
+    }
+
+    fn prefix_public_key(public_key: &PublicKey<F>, len: usize) -> Result<PublicKey<F>, CltError> {
+        public_key.prefix(len)
+    }
+
+    fn prefix_decryption_key(
+        decryption_key: &DecryptionKey<F>,
+        len: usize,
+    ) -> Result<DecryptionKey<F>, CltError> {
+        decryption_key.prefix(len)
+    }
+
+    fn prefix_ciphertext(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, CltError> {
+        ciphertext.prefix(len)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
-    pub(crate) use super::params::tests::{rng, test_params};
+    pub(crate) use super::params::tests::{rng, test_scheme};
     use super::{Ciphertext, MasterSecretKey, PublicKey, setup};
     use crate::Field128;
     use crate::error::CltError;
@@ -314,7 +351,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     fn keys(dimension: usize) -> (PublicKey<Field128>, MasterSecretKey<Field128>) {
-        setup(&Arc::new(test_params()), dimension, &mut rng())
+        setup(&Arc::new(test_scheme()), dimension, &mut rng())
     }
 
     fn message(len: usize) -> Vec<Field128> {

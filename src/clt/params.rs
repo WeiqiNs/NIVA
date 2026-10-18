@@ -17,7 +17,7 @@ pub(crate) struct HsmGroup {
 }
 
 #[derive(Clone)]
-pub struct Params<F> {
+pub struct Clt<F> {
     hsm: HsmGroup,
     generator: FixedBase,
     randomness: DiscreteGaussian,
@@ -91,7 +91,7 @@ impl HsmGroup {
     }
 }
 
-impl<F: PrimeField> Params<F> {
+impl<F: PrimeField> Clt<F> {
     pub fn generate(
         discriminant_bits: u32,
         rng: &mut (impl CryptoRng + RngCore),
@@ -170,9 +170,9 @@ impl<F: PrimeField> Params<F> {
     }
 }
 
-impl<F> fmt::Debug for Params<F> {
+impl<F> fmt::Debug for Clt<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Params")
+        f.debug_struct("Clt")
             .field("discriminant_bits", &self.discriminant_bits)
             .finish_non_exhaustive()
     }
@@ -180,7 +180,7 @@ impl<F> fmt::Debug for Params<F> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{HsmGroup, Params, class_number_bound};
+    use super::{Clt, HsmGroup, class_number_bound};
     use crate::Field128;
     use crate::class_group::pow;
     use crate::class_group::tests::{is_canonical, reduced_forms};
@@ -198,8 +198,8 @@ pub(crate) mod tests {
         StdRng::seed_from_u64(7)
     }
 
-    pub(crate) fn test_params() -> Params<Field128> {
-        Params::generate(TEST_DISCRIMINANT_BITS, &mut rng()).unwrap()
+    pub(crate) fn test_scheme() -> Clt<Field128> {
+        Clt::generate(TEST_DISCRIMINANT_BITS, &mut rng()).unwrap()
     }
 
     #[test]
@@ -243,11 +243,11 @@ pub(crate) mod tests {
         let mut rng = rng();
         let p = IBig::from(UBig::from_le_bytes(&Field128::MODULUS.to_bytes_le()));
         for bits in [259, TEST_DISCRIMINANT_BITS] {
-            let params = Params::<Field128>::generate(bits, &mut rng).unwrap();
+            let params = Clt::<Field128>::generate(bits, &mut rng).unwrap();
             assert_eq!(params.discriminant_bits(), bits);
             assert_eq!(
                 format!("{params:?}"),
-                format!("Params {{ discriminant_bits: {bits}, .. }}")
+                format!("Clt {{ discriminant_bits: {bits}, .. }}")
             );
             let hsm = &params.hsm;
             let q = -&hsm.delta_k / &p;
@@ -272,7 +272,7 @@ pub(crate) mod tests {
             }
         }
         assert_eq!(
-            Params::<Field128>::generate(258, &mut rng).err(),
+            Clt::<Field128>::generate(258, &mut rng).err(),
             Some(CltError::DiscriminantTooSmall {
                 bits: 258,
                 minimum: 259

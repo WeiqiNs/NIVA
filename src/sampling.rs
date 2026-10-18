@@ -2,6 +2,8 @@ use ark_std::rand::{CryptoRng, RngCore};
 use dashu_int::ops::{BitTest, DivRem, SquareRoot, UnsignedAbs};
 use dashu_int::{IBig, UBig};
 
+pub(crate) const NOISE_ETA: u32 = 21;
+
 #[derive(Clone, Debug)]
 pub(crate) struct DiscreteGaussian {
     variance: UBig,
@@ -21,6 +23,12 @@ pub(crate) fn uniform_below(bound: &UBig, rng: &mut (impl CryptoRng + RngCore)) 
             return candidate;
         }
     }
+}
+
+pub(crate) fn centered_binomial(rng: &mut (impl CryptoRng + RngCore)) -> i64 {
+    let mask = (1u64 << NOISE_ETA) - 1;
+    let bits = rng.next_u64();
+    i64::from((bits & mask).count_ones()) - i64::from(((bits >> NOISE_ETA) & mask).count_ones())
 }
 
 fn bernoulli_exp_neg_at_most_one(
@@ -91,7 +99,7 @@ impl DiscreteGaussian {
 
 #[cfg(test)]
 mod tests {
-    use super::{DiscreteGaussian, bernoulli_exp_neg, uniform_below};
+    use super::{DiscreteGaussian, NOISE_ETA, bernoulli_exp_neg, centered_binomial, uniform_below};
     use ark_std::rand::SeedableRng;
     use ark_std::rand::rngs::StdRng;
     use dashu_int::UBig;
@@ -163,5 +171,23 @@ mod tests {
         let zero_mass = f64::from(u16::try_from(zeros).unwrap()) / count;
         let expected = (10.0 * TAU.sqrt()).recip();
         assert!((zero_mass - expected).abs() < 0.01, "{zero_mass}");
+    }
+
+    #[test]
+    fn centered_binomial_matches_its_moments() {
+        const SAMPLES: u16 = 20_000;
+        let mut rng = rng();
+        let samples: Vec<i64> = (0..SAMPLES).map(|_| centered_binomial(&mut rng)).collect();
+        let count = f64::from(SAMPLES);
+        let values: Vec<f64> = samples
+            .iter()
+            .map(|&x| f64::from(i32::try_from(x).unwrap()))
+            .collect();
+        let mean = values.iter().sum::<f64>() / count;
+        let variance = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / count;
+        assert!(mean.abs() < 0.1, "{mean}");
+        assert!((10.0..=11.0).contains(&variance), "{variance}");
+        let eta = i64::from(NOISE_ETA);
+        assert!(samples.iter().all(|x| (-eta..=eta).contains(x)));
     }
 }

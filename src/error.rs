@@ -13,8 +13,21 @@ pub enum CltError {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+pub enum LatticeError {
+    RingDimension { dimension: usize },
+    DimensionTooLarge { dimension: usize, maximum: usize },
+    DimensionMismatch { expected: usize, actual: usize },
+    RingDimensionMismatch { expected: usize, actual: usize },
+    PrefixTooLong { len: usize, dimension: usize },
+    DependentFunctionVectors,
+    NoiseTooLarge,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum PearError {
     Clt(CltError),
+    Lattice(LatticeError),
     Flp(FlpError),
     PayloadTooLong {
         payload_len: usize,
@@ -51,10 +64,44 @@ impl fmt::Display for CltError {
 
 impl std::error::Error for CltError {}
 
+impl fmt::Display for LatticeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RingDimension { dimension } => write!(
+                f,
+                "ring dimension {dimension} is not a supported power of two"
+            ),
+            Self::DimensionTooLarge { dimension, maximum } => {
+                write!(f, "dimension {dimension} exceeds the maximum of {maximum}")
+            }
+            Self::DimensionMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "vector has dimension {actual} but the key expects {expected}"
+                )
+            }
+            Self::RingDimensionMismatch { expected, actual } => write!(
+                f,
+                "polynomial has ring dimension {actual} but the parameters use {expected}"
+            ),
+            Self::PrefixTooLong { len, dimension } => {
+                write!(f, "prefix of {len} exceeds the dimension {dimension}")
+            }
+            Self::DependentFunctionVectors => {
+                f.write_str("function vectors are linearly dependent over the field")
+            }
+            Self::NoiseTooLarge => f.write_str("ciphertext noise exceeds the decoding ceiling"),
+        }
+    }
+}
+
+impl std::error::Error for LatticeError {}
+
 impl fmt::Display for PearError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Clt(_) => f.write_str("functional encryption failed"),
+            Self::Clt(_) => f.write_str("class-group functional encryption failed"),
+            Self::Lattice(_) => f.write_str("lattice functional encryption failed"),
             Self::Flp(_) => f.write_str("validity proof failed"),
             Self::PayloadTooLong {
                 payload_len,
@@ -74,9 +121,16 @@ impl std::error::Error for PearError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Clt(error) => Some(error),
+            Self::Lattice(error) => Some(error),
             Self::Flp(error) => Some(error),
             Self::PayloadTooLong { .. } | Self::CircuitMismatch => None,
         }
+    }
+}
+
+impl From<LatticeError> for PearError {
+    fn from(error: LatticeError) -> Self {
+        Self::Lattice(error)
     }
 }
 
