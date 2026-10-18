@@ -68,15 +68,6 @@ class-group scheme and ring dimension 16384 for the lattice scheme, length 100. 
 The lattice scheme pays in size: its public key grows by 569 KB per vector coordinate, to 3 GB for `norm_bound`.
 `cargo run --example costs` prints the sizes per rule.
 
-## Security notes
-
-- Use a cryptographically secure RNG (`rand` 0.8, such as `OsRng`). One query set serves every client, which the
-  paper proves sound and zero knowledge; integrity assumes clients do not collude with the server.
-- Neither scheme is constant time.
-- The lattice scheme is for speed comparisons: its privacy is heuristic (and only at ring dimension 16384; smaller
-  ones are for tests), and a client can probe the reused query through its own noise, which a noise ceiling narrows
-  but does not close.
-
 ## Using it
 
 ```toml
