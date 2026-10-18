@@ -382,7 +382,10 @@ impl<F: LatticeField> Ipfe<F> for Lattice<F> {
         decryption_key.prefix(len)
     }
 
-    fn truncate(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, LatticeError> {
+    fn prefix_ciphertext(
+        ciphertext: Ciphertext<F>,
+        len: usize,
+    ) -> Result<Ciphertext<F>, LatticeError> {
         ciphertext.prefix(len)
     }
 }

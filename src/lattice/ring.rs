@@ -1,7 +1,7 @@
 use ark_ff::FftField;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct Ring<K: FftField> {
     domain: Radix2EvaluationDomain<K>,
 }

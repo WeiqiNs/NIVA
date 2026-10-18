@@ -2,7 +2,7 @@ mod common;
 
 use ark_ff::{AdditiveGroup, Field};
 use common::{TEST_DISCRIMINANT_BITS, clt, lattice, rng};
-use niva::clt::{Ciphertext, Clt};
+use niva::clt::Clt;
 use niva::lattice::{Lattice, MAX_DIMENSION};
 use niva::pear::{Analyst, Client, Contribution, Server, Setup};
 use niva::{CltError, Field128, Ipfe, LatticeError, PearError};
@@ -211,7 +211,7 @@ where
     let (_, client, server) = roles(scheme, &circuit, 4);
     let input = values(&[1, 0, 0, 1]);
     let ciphertext = client.encrypt(&input, &mut rng).unwrap();
-    let short = S::truncate(ciphertext.clone(), 4).unwrap();
+    let short = S::prefix_ciphertext(ciphertext.clone(), 4).unwrap();
     assert!(server.validate(short).is_none());
 
     let foreign_setup = Analyst::setup(foreign_scheme, circuit.clone(), 4, &mut rng).unwrap();
@@ -324,7 +324,7 @@ fn setup_errors() {
             actual: 3,
         }))
     );
-    let full: Ciphertext<Field128> = client.encrypt(&values(&[1, 0, 1, 0]), &mut rng).unwrap();
+    let full = client.encrypt(&values(&[1, 0, 1, 0]), &mut rng).unwrap();
     assert_eq!(
         setup.analyst.decrypt(&full).err(),
         Some(PearError::Clt(CltError::DimensionMismatch {
@@ -390,7 +390,7 @@ fn assert_dimensions_checked<S: Ipfe<Field128>>(
         Some(mismatch(3, 5))
     );
     let ciphertext = S::encrypt(&public_key, &[Field128::ONE; 3], &mut rng).unwrap();
-    let short = S::truncate(ciphertext.clone(), 2).unwrap();
+    let short = S::prefix_ciphertext(ciphertext.clone(), 2).unwrap();
     assert_eq!(
         S::add(&public_key, &ciphertext, &short).err(),
         Some(mismatch(3, 2))

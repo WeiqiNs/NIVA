@@ -1,15 +1,11 @@
 mod common;
 
 use ark_ff::{AdditiveGroup, Field, UniformRand};
-use common::{lattice, rng};
+use common::{inner_product, lattice, rng};
 use niva::lattice::{self, Lattice, LatticeField, MAX_DIMENSION};
 use niva::{Field128, LatticeError};
 use std::collections::BTreeSet;
 use std::sync::Arc;
-
-fn inner_product(x: &[Field128], y: &[Field128]) -> Field128 {
-    x.iter().zip(y).map(|(a, b)| *a * b).sum()
-}
 
 #[test]
 fn foreign_ring_dimension_is_rejected() {

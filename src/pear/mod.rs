@@ -215,7 +215,9 @@ where
         if !self.flp.decide(query, &answers) {
             return None;
         }
-        S::truncate(ciphertext, *payload_len).ok().map(Contribution)
+        S::prefix_ciphertext(ciphertext, *payload_len)
+            .ok()
+            .map(Contribution)
     }
 
     pub fn aggregate(

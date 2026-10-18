@@ -335,7 +335,7 @@ impl<F: PrimeField> Ipfe<F> for Clt<F> {
         decryption_key.prefix(len)
     }
 
-    fn truncate(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, CltError> {
+    fn prefix_ciphertext(ciphertext: Ciphertext<F>, len: usize) -> Result<Ciphertext<F>, CltError> {
         ciphertext.prefix(len)
     }
 }

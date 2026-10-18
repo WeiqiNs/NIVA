@@ -64,5 +64,8 @@ pub trait Ipfe<F: PrimeField>: Debug {
         len: usize,
     ) -> Result<Self::DecryptionKey, Self::Error>;
 
-    fn truncate(ciphertext: Self::Ciphertext, len: usize) -> Result<Self::Ciphertext, Self::Error>;
+    fn prefix_ciphertext(
+        ciphertext: Self::Ciphertext,
+        len: usize,
+    ) -> Result<Self::Ciphertext, Self::Error>;
 }

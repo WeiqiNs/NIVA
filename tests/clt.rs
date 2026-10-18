@@ -1,15 +1,11 @@
 mod common;
 
 use ark_ff::{AdditiveGroup, Field, UniformRand};
-use common::{clt, rng};
+use common::{clt, inner_product, rng};
 use niva::clt::{self, Clt, DISCRIMINANT_BITS};
 use niva::{CltError, Field128};
 use std::collections::BTreeSet;
 use std::sync::Arc;
-
-fn inner_product(x: &[Field128], y: &[Field128]) -> Field128 {
-    x.iter().zip(y).map(|(a, b)| *a * b).sum()
-}
 
 #[test]
 fn decrypt_and_eval_recover_plaintext_and_inner_products() {

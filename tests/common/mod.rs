@@ -21,3 +21,7 @@ pub fn clt() -> Arc<Clt<Field128>> {
 pub fn lattice() -> Arc<Lattice<Field128>> {
     Arc::new(Lattice::new(TEST_RING_DIMENSION).unwrap())
 }
+
+pub fn inner_product(x: &[Field128], y: &[Field128]) -> Field128 {
+    x.iter().zip(y).map(|(a, b)| *a * b).sum()
+}
