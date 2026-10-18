@@ -140,7 +140,7 @@ impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Client<F, C, S> {
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<S::Ciphertext, PearError> {
         let vector = self.flp.prove(input, rng)?;
-        Ok(S::encrypt(&self.public_key, &vector, rng))
+        S::encrypt(&self.public_key, &vector, rng)
     }
 }
 
@@ -196,8 +196,7 @@ impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Server<F, C, S> {
         rng: &mut (impl CryptoRng + RngCore),
     ) -> S::Ciphertext {
         let payload_key = &self.payload_key;
-        let zeros = vec![F::ZERO; self.verification_key.payload_len];
-        let fresh = S::encrypt(payload_key, &zeros, rng);
+        let fresh = S::encrypt_zeros(payload_key, rng);
         let ciphertexts = contributions
             .iter()
             .map(|Contribution(ciphertext)| ciphertext.clone())

@@ -72,13 +72,13 @@ fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
     let flp = Flp::new(case.circuit.clone()).unwrap();
     let vector = flp.prove(&case.honest[0], &mut rng).unwrap();
     let public_key = &setup.public_key;
-    let untampered = S::encrypt(public_key, &vector, &mut rng);
+    let untampered = S::encrypt(public_key, &vector, &mut rng).unwrap();
     assert!(server.validate(untampered).is_some(), "{label}");
     let input_len = case.circuit.input_len();
     for position in [0, input_len, input_len + 1, flp.vector_len() - 1] {
         let mut tampered = vector.clone();
         tampered[position] += Field128::ONE;
-        let ciphertext = S::encrypt(public_key, &tampered, &mut rng);
+        let ciphertext = S::encrypt(public_key, &tampered, &mut rng).unwrap();
         assert!(server.validate(ciphertext).is_none(), "{label} {position}");
     }
 
@@ -331,6 +331,31 @@ fn verification_key_debug_is_redacted() {
     assert_eq!(
         format!("{:?}", setup.verification_key),
         "VerificationKey { queries: 2, payload_len: 3, .. }"
+    );
+}
+
+#[test]
+fn backend_encryption_checks_the_dimension() {
+    let mut rng = rng();
+    let message = [Field128::ONE; 5];
+
+    let (public_key, _) = niva::clt::setup(&params(), 3, &mut rng);
+    assert_eq!(
+        <Params<Field128> as Ipfe<Field128>>::encrypt(&public_key, &message, &mut rng).err(),
+        Some(PearError::Clt(CltError::DimensionMismatch {
+            expected: 3,
+            actual: 5,
+        }))
+    );
+
+    let (public_key, _) = lattice::setup(&lattice_params(), 3, &mut rng).unwrap();
+    assert_eq!(
+        <lattice::Params<Field128> as Ipfe<Field128>>::encrypt(&public_key, &message, &mut rng)
+            .err(),
+        Some(PearError::Lattice(LatticeError::DimensionMismatch {
+            expected: 3,
+            actual: 5,
+        }))
     );
 }
 

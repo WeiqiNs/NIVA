@@ -17,6 +17,7 @@ pub enum LatticeError {
     RingDimension { dimension: usize },
     DimensionTooLarge { dimension: usize, maximum: usize },
     DimensionMismatch { expected: usize, actual: usize },
+    RingDimensionMismatch { expected: usize, actual: usize },
     PrefixTooLong { len: usize, dimension: usize },
     DependentFunctionVectors,
     NoiseTooLarge,
@@ -79,6 +80,10 @@ impl fmt::Display for LatticeError {
                     "vector has dimension {actual} but the key expects {expected}"
                 )
             }
+            Self::RingDimensionMismatch { expected, actual } => write!(
+                f,
+                "polynomial has ring dimension {actual} but the parameters use {expected}"
+            ),
             Self::PrefixTooLong { len, dimension } => {
                 write!(f, "prefix of {len} exceeds the dimension {dimension}")
             }

@@ -47,8 +47,8 @@ This is `examples/quickstart.rs`.
   learn, and nothing else.
 - `Client::encrypt` proves that its input satisfies the circuit and encrypts input and proof together.
 - `Server::validate` evaluates the function keys on the ciphertext, which yields the query answers, and accepts the
-  ciphertext only if the proof checks out; it keeps just the payload part. `Server::aggregate` multiplies the kept
-  ciphertexts together with a fresh encryption of zeros.
+  ciphertext only if the proof checks out; it keeps just the payload part. `Server::aggregate` combines the kept
+  ciphertexts homomorphically with a fresh encryption of zeros.
 - `Analyst::decrypt` turns the aggregate into the sum of the valid payloads.
 
 Run `cargo run --example costs` for each rule's ciphertext size and query count.
@@ -79,7 +79,7 @@ let setup = Analyst::setup(&params, circuit.clone(), 4, rng)?;
 - Function keys come from one batch: in both backends `MasterSecretKey::function_keys` consumes the master key and
   returns a decryption key that cannot issue more, because keys from separate batches could combine into an
   unauthorised one.
-- Secret exponents are not handled in constant time.
+- Neither backend handles secrets in constant time.
 - The lattice backend's privacy is heuristic, with no reduction to PEAR's privacy game. Its integrity assumes clients
   encrypt honestly: a client can add noise to its own ciphertext and learn from the server's verdict about the
   reused query (a key-reuse reaction attack). Decoding rejects noise above a quarter of the headroom modulus, which
@@ -118,8 +118,8 @@ exponentiation per vector coordinate.
 | lattice | norm_bound | 100 | 134 ms | 0.36 ms | 6.0 ms | 2.8 ms |
 
 On one thread (without `parallel`), `binary` at length 100 takes 16.5 s to encrypt and 0.50 s to validate with CLT,
-and 110 ms and 0.52 ms with the lattice backend. The lattice backend pays in size instead: its ciphertexts are about
-0.6 MB and its public key grows by 569 KB per vector coordinate, to 3 GB for `norm_bound` at length 100.
+and 110 ms and 0.52 ms with the lattice backend. The lattice backend pays in size instead: its ciphertexts are 0.57 to
+0.75 MB and its public key grows by 569 KB per vector coordinate, to 3 GB for `norm_bound` at length 100.
 
 ## Build and test
 

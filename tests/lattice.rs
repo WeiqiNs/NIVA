@@ -12,6 +12,47 @@ fn inner_product(x: &[Field128], y: &[Field128]) -> Field128 {
 }
 
 #[test]
+fn foreign_ring_dimension_is_rejected() {
+    let mut rng = rng();
+    let local = lattice_params();
+    let foreign = Arc::new(Params::new(local.ring_dimension() * 2).unwrap());
+    let mismatch = Some(LatticeError::RingDimensionMismatch {
+        expected: local.ring_dimension(),
+        actual: foreign.ring_dimension(),
+    });
+    let message = [Field128::ONE, Field128::ZERO, -Field128::ONE];
+    let vector = [Field128::ONE; 3];
+
+    let (public_key, secret_key) = lattice::setup(&local, 3, &mut rng).unwrap();
+    let (keys, decryption_key) = secret_key.function_keys(&[vector.as_slice()]).unwrap();
+    let ciphertext = public_key.encrypt(&message, &mut rng).unwrap();
+
+    let (foreign_public_key, foreign_secret_key) = lattice::setup(&foreign, 3, &mut rng).unwrap();
+    let (foreign_keys, _) = foreign_secret_key
+        .function_keys(&[vector.as_slice()])
+        .unwrap();
+    let foreign_ciphertext = foreign_public_key.encrypt(&message, &mut rng).unwrap();
+
+    assert_eq!(
+        public_key.eval(&keys[0], &foreign_ciphertext).err(),
+        mismatch
+    );
+    assert_eq!(
+        public_key.eval(&foreign_keys[0], &ciphertext).err(),
+        mismatch
+    );
+    assert_eq!(
+        public_key.add(&ciphertext, &foreign_ciphertext).err(),
+        mismatch
+    );
+    assert_eq!(
+        public_key.add(&foreign_ciphertext, &ciphertext).err(),
+        mismatch
+    );
+    assert_eq!(decryption_key.decrypt(&foreign_ciphertext).err(), mismatch);
+}
+
+#[test]
 fn decrypt_and_eval_recover_plaintext_and_inner_products() {
     let mut rng = rng();
     let (public_key, secret_key) = lattice::setup(&lattice_params(), 5, &mut rng).unwrap();
@@ -164,6 +205,10 @@ fn error_messages_are_distinct_lowercase_sentences() {
         LatticeError::PrefixTooLong {
             len: 6,
             dimension: 5,
+        },
+        LatticeError::RingDimensionMismatch {
+            expected: 1024,
+            actual: 2048,
         },
         LatticeError::DependentFunctionVectors,
         LatticeError::NoiseTooLarge,

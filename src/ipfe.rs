@@ -30,6 +30,11 @@ pub trait Ipfe<F: PrimeField>: Debug {
         public_key: &Self::PublicKey,
         message: &[F],
         rng: &mut (impl CryptoRng + RngCore),
+    ) -> Result<Self::Ciphertext, PearError>;
+
+    fn encrypt_zeros(
+        public_key: &Self::PublicKey,
+        rng: &mut (impl CryptoRng + RngCore),
     ) -> Self::Ciphertext;
 
     fn eval(

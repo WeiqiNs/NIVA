@@ -18,11 +18,11 @@ use std::sync::Arc;
 
 pub const MAX_DIMENSION: usize = 8192;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PublicKey<F: LatticeField> {
     params: Arc<Params<F>>,
-    mask: Polynomial<F>,
-    bases: Vec<Polynomial<F>>,
+    mask: Arc<Polynomial<F>>,
+    bases: Arc<Vec<Polynomial<F>>>,
 }
 
 pub struct MasterSecretKey<F: LatticeField> {
@@ -41,7 +41,7 @@ pub struct FunctionKey<F: LatticeField> {
     secret: Polynomial<F>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Ciphertext<F: LatticeField> {
     randomness: Polynomial<F>,
     coords: Vec<Residue<F>>,
@@ -57,6 +57,18 @@ fn check_dimension(expected: usize, actual: usize) -> Result<(), LatticeError> {
 fn check_prefix(len: usize, dimension: usize) -> Result<(), LatticeError> {
     if len > dimension {
         return Err(LatticeError::PrefixTooLong { len, dimension });
+    }
+    Ok(())
+}
+
+fn check_ring<F: LatticeField>(
+    params: &Params<F>,
+    polynomial: &Polynomial<F>,
+) -> Result<(), LatticeError> {
+    let expected = params.ring_dimension();
+    let actual = polynomial.ring_dimension();
+    if expected != actual {
+        return Err(LatticeError::RingDimensionMismatch { expected, actual });
     }
     Ok(())
 }
@@ -91,8 +103,8 @@ pub fn setup<F: LatticeField>(
     Ok((
         PublicKey {
             params: Arc::clone(params),
-            mask,
-            bases,
+            mask: Arc::new(mask),
+            bases: Arc::new(bases),
         },
         MasterSecretKey {
             params: Arc::clone(params),
@@ -126,7 +138,7 @@ impl<F: LatticeField> PublicKey<F> {
         let offset = params.forward(&params.sample_coefficients(rng));
         let noises: Vec<i64> = message.iter().map(|_| centered_binomial(rng)).collect();
         let coords = cfg_iter!(message)
-            .zip(&self.bases)
+            .zip(self.bases.as_slice())
             .zip(noises)
             .map(|((&value, base), noise)| {
                 params.constant_term(base, &randomness)
@@ -135,7 +147,7 @@ impl<F: LatticeField> PublicKey<F> {
             })
             .collect();
         Ciphertext {
-            randomness: &(&self.mask * &randomness) + &offset,
+            randomness: &(self.mask.as_ref() * &randomness) + &offset,
             coords,
         }
     }
@@ -146,6 +158,8 @@ impl<F: LatticeField> PublicKey<F> {
         ciphertext: &Ciphertext<F>,
     ) -> Result<F, LatticeError> {
         check_dimension(key.coeffs.len(), ciphertext.dimension())?;
+        check_ring(&self.params, &key.secret)?;
+        check_ring(&self.params, &ciphertext.randomness)?;
         self.params.decode(self.eval_raw(key, ciphertext))
     }
 
@@ -168,6 +182,8 @@ impl<F: LatticeField> PublicKey<F> {
         right: &Ciphertext<F>,
     ) -> Result<Ciphertext<F>, LatticeError> {
         check_dimension(left.dimension(), right.dimension())?;
+        check_ring(&self.params, &left.randomness)?;
+        check_ring(&self.params, &right.randomness)?;
         Ok(Self::add_unchecked(left, right))
     }
 
@@ -187,8 +203,8 @@ impl<F: LatticeField> PublicKey<F> {
         check_prefix(len, self.dimension())?;
         Ok(Self {
             params: Arc::clone(&self.params),
-            mask: self.mask.clone(),
-            bases: self.bases[..len].to_vec(),
+            mask: Arc::clone(&self.mask),
+            bases: Arc::new(self.bases[..len].to_vec()),
         })
     }
 }
@@ -233,6 +249,7 @@ impl<F: LatticeField> DecryptionKey<F> {
 
     pub fn decrypt(&self, ciphertext: &Ciphertext<F>) -> Result<Vec<F>, LatticeError> {
         check_dimension(self.dimension(), ciphertext.dimension())?;
+        check_ring(&self.params, &ciphertext.randomness)?;
         let params = &self.params;
         cfg_iter!(ciphertext.coords)
             .zip(&self.secrets)
@@ -248,6 +265,12 @@ impl<F: LatticeField> DecryptionKey<F> {
             params: Arc::clone(&self.params),
             secrets: self.secrets[..len].to_vec(),
         })
+    }
+}
+
+impl<F: LatticeField> fmt::Debug for PublicKey<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        redacted(f, "PublicKey", self.bases.len())
     }
 }
 
@@ -289,6 +312,12 @@ impl<F: LatticeField> Ciphertext<F> {
     }
 }
 
+impl<F: LatticeField> fmt::Debug for Ciphertext<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        redacted(f, "Ciphertext", self.coords.len())
+    }
+}
+
 impl<F: LatticeField> IpfePublicKey<F> for PublicKey<F> {
     type Scheme = Params<F>;
 }
@@ -327,8 +356,15 @@ impl<F: LatticeField> Ipfe<F> for Params<F> {
         public_key: &PublicKey<F>,
         message: &[F],
         rng: &mut (impl CryptoRng + RngCore),
+    ) -> Result<Ciphertext<F>, PearError> {
+        Ok(public_key.encrypt(message, rng)?)
+    }
+
+    fn encrypt_zeros(
+        public_key: &PublicKey<F>,
+        rng: &mut (impl CryptoRng + RngCore),
     ) -> Ciphertext<F> {
-        public_key.encrypt_unchecked(message, rng)
+        public_key.encrypt_unchecked(&vec![F::ZERO; public_key.dimension()], rng)
     }
 
     fn eval(
@@ -506,10 +542,18 @@ pub(crate) mod tests {
 
     #[test]
     fn secret_debug_output_is_redacted() {
-        let (_, secret_key) = keys(16);
+        let (public_key, secret_key) = keys(16);
         assert_eq!(
             format!("{secret_key:?}"),
             "MasterSecretKey { dimension: 16, .. }"
+        );
+        assert_eq!(format!("{public_key:?}"), "PublicKey { dimension: 16, .. }");
+        let ciphertext = public_key
+            .encrypt(&random(16, &mut rng()), &mut rng())
+            .unwrap();
+        assert_eq!(
+            format!("{ciphertext:?}"),
+            "Ciphertext { dimension: 16, .. }"
         );
         let vector = random(16, &mut rng());
         let (keys, decryption_key) = secret_key.function_keys(&[vector.as_slice()]).unwrap();

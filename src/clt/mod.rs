@@ -312,8 +312,15 @@ impl<F: PrimeField> Ipfe<F> for Params<F> {
         public_key: &PublicKey<F>,
         message: &[F],
         rng: &mut (impl CryptoRng + RngCore),
+    ) -> Result<Ciphertext<F>, PearError> {
+        Ok(public_key.encrypt(message, rng)?)
+    }
+
+    fn encrypt_zeros(
+        public_key: &PublicKey<F>,
+        rng: &mut (impl CryptoRng + RngCore),
     ) -> Ciphertext<F> {
-        public_key.encrypt_unchecked(message, rng)
+        public_key.encrypt_unchecked(&vec![F::ZERO; public_key.dimension()], rng)
     }
 
     fn eval(

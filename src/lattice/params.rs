@@ -235,6 +235,12 @@ impl<F: LatticeField> Sum for Residue<F> {
     }
 }
 
+impl<F: LatticeField> Polynomial<F> {
+    pub(crate) fn ring_dimension(&self) -> usize {
+        self.field.len()
+    }
+}
+
 impl<F: LatticeField> Add for &Polynomial<F> {
     type Output = Polynomial<F>;
 

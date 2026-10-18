@@ -52,7 +52,7 @@ fn fixture<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
     .unwrap();
     let flp = Flp::new(circuit.clone()).unwrap();
     let vector = flp.prove(&config.input, &mut rng).unwrap();
-    let ciphertext = S::encrypt(&setup.public_key, &vector, &mut rng);
+    let ciphertext = S::encrypt(&setup.public_key, &vector, &mut rng).unwrap();
     let contribution = server.validate(ciphertext.clone()).unwrap();
     let contributions = [contribution.clone(), contribution];
     let aggregate = server.aggregate(&contributions, &mut rng);
@@ -100,7 +100,7 @@ fn bench_config<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
         let Fixture {
             public_key, vector, ..
         } = fixture();
-        b.iter(|| S::encrypt(public_key, black_box(vector), &mut rng));
+        b.iter(|| S::encrypt(public_key, black_box(vector), &mut rng).unwrap());
     });
     group.bench_function(id("validate"), |b| {
         let Fixture {
