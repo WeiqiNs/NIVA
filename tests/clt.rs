@@ -1,8 +1,8 @@
 mod common;
 
 use ark_ff::{AdditiveGroup, Field, UniformRand};
-use common::{params, rng};
-use niva::clt::{self, DISCRIMINANT_BITS, Params};
+use common::{clt, rng};
+use niva::clt::{self, Clt, DISCRIMINANT_BITS};
 use niva::{CltError, Field128};
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ fn inner_product(x: &[Field128], y: &[Field128]) -> Field128 {
 #[test]
 fn decrypt_and_eval_recover_plaintext_and_inner_products() {
     let mut rng = rng();
-    let (public_key, secret_key) = clt::setup(&params(), 5, &mut rng);
+    let (public_key, secret_key) = clt::setup(&clt(), 5, &mut rng);
     let message = [
         Field128::ZERO,
         Field128::ONE,
@@ -47,7 +47,7 @@ fn decrypt_and_eval_recover_plaintext_and_inner_products() {
 #[test]
 fn add_is_homomorphic_with_wraparound() {
     let mut rng = rng();
-    let (public_key, secret_key) = clt::setup(&params(), 2, &mut rng);
+    let (public_key, secret_key) = clt::setup(&clt(), 2, &mut rng);
     let left = public_key
         .encrypt(&[-Field128::ONE, Field128::from(5u8)], &mut rng)
         .unwrap();
@@ -65,7 +65,7 @@ fn add_is_homomorphic_with_wraparound() {
 #[test]
 fn prefix_restricts_keys_and_ciphertexts() {
     let mut rng = rng();
-    let (public_key, secret_key) = clt::setup(&params(), 5, &mut rng);
+    let (public_key, secret_key) = clt::setup(&clt(), 5, &mut rng);
     let message: Vec<Field128> = (1..=5u8).map(Field128::from).collect();
     let ciphertext = public_key.encrypt(&message, &mut rng).unwrap();
 
@@ -94,7 +94,7 @@ fn prefix_restricts_keys_and_ciphertexts() {
 #[test]
 fn dimension_mismatches_are_errors() {
     let mut rng = rng();
-    let (public_key, secret_key) = clt::setup(&params(), 3, &mut rng);
+    let (public_key, secret_key) = clt::setup(&clt(), 3, &mut rng);
     let mismatch = Some(CltError::DimensionMismatch {
         expected: 3,
         actual: 2,
@@ -109,7 +109,7 @@ fn dimension_mismatches_are_errors() {
     let (keys, decryption_key) = secret_key.function_keys(&[message.as_slice()]).unwrap();
 
     assert_eq!(public_key.encrypt(&message[..2], &mut rng).err(), mismatch);
-    let (_, other_secret_key) = clt::setup(&params(), 3, &mut rng);
+    let (_, other_secret_key) = clt::setup(&clt(), 3, &mut rng);
     let vectors = [message.as_slice(), &message[..2]];
     assert_eq!(other_secret_key.function_keys(&vectors).err(), mismatch);
     assert_eq!(public_key.eval(&keys[0], &short).err(), mismatch);
@@ -127,7 +127,7 @@ fn dependent_function_vectors_rejected() {
         [vector.as_slice(), doubled.as_slice()].as_slice(),
         &[zero.as_slice()],
     ] {
-        let (_, secret_key) = clt::setup(&params(), 3, &mut rng);
+        let (_, secret_key) = clt::setup(&clt(), 3, &mut rng);
         assert_eq!(
             secret_key.function_keys(vectors).err(),
             Some(CltError::DependentFunctionVectors)
@@ -165,9 +165,9 @@ fn error_messages_are_distinct_lowercase_sentences() {
 #[ignore = "generates full-size parameters"]
 fn full_size_round_trip() {
     let mut rng = rng();
-    let params = Arc::new(Params::<Field128>::generate(DISCRIMINANT_BITS, &mut rng).unwrap());
-    assert_eq!(params.discriminant_bits(), 1827);
-    let (public_key, secret_key) = clt::setup(&params, 3, &mut rng);
+    let scheme = Arc::new(Clt::<Field128>::generate(DISCRIMINANT_BITS, &mut rng).unwrap());
+    assert_eq!(scheme.discriminant_bits(), 1827);
+    let (public_key, secret_key) = clt::setup(&scheme, 3, &mut rng);
     let message = [Field128::from(7u8), -Field128::ONE, Field128::ZERO];
     let ciphertext = public_key.encrypt(&message, &mut rng).unwrap();
     let vector = [Field128::ONE, Field128::from(2u8), Field128::from(3u8)];

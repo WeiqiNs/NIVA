@@ -1,11 +1,11 @@
 mod params;
 
-pub use params::Params;
+pub use params::Clt;
 
 use crate::class_group::{FixedBase, Form, multi_exp, pow};
 use crate::debug::redacted;
 use crate::error::CltError;
-use crate::ipfe::{Ipfe, IpfePublicKey};
+use crate::ipfe::Ipfe;
 use crate::linear_algebra::linearly_independent;
 use ark_ff::PrimeField;
 use ark_std::cfg_iter;
@@ -23,17 +23,17 @@ pub const DISCRIMINANT_BITS: u32 = 1827;
 
 #[derive(Clone, Debug)]
 pub struct PublicKey<F> {
-    params: Arc<Params<F>>,
+    params: Arc<Clt<F>>,
     bases: Vec<Form>,
 }
 
 pub struct MasterSecretKey<F> {
-    params: Arc<Params<F>>,
+    params: Arc<Clt<F>>,
     exponents: Vec<IBig>,
 }
 
 pub struct DecryptionKey<F> {
-    params: Arc<Params<F>>,
+    params: Arc<Clt<F>>,
     exponents: Vec<IBig>,
 }
 
@@ -66,7 +66,7 @@ fn check_prefix(len: usize, dimension: usize) -> Result<(), CltError> {
 }
 
 pub fn setup<F: PrimeField>(
-    params: &Arc<Params<F>>,
+    params: &Arc<Clt<F>>,
     dimension: usize,
     rng: &mut (impl CryptoRng + RngCore),
 ) -> (PublicKey<F>, MasterSecretKey<F>) {
@@ -177,7 +177,7 @@ impl<F: PrimeField> MasterSecretKey<F> {
         let keys = vectors
             .iter()
             .map(|vector| {
-                let coeffs: Vec<IBig> = vector.iter().map(|&value| Params::lift(value)).collect();
+                let coeffs: Vec<IBig> = vector.iter().map(|&value| Clt::lift(value)).collect();
                 let secret = coeffs
                     .iter()
                     .zip(&self.exponents)
@@ -270,11 +270,7 @@ impl<F> Ciphertext<F> {
     }
 }
 
-impl<F: PrimeField> IpfePublicKey<F> for PublicKey<F> {
-    type Scheme = Params<F>;
-}
-
-impl<F: PrimeField> Ipfe<F> for Params<F> {
+impl<F: PrimeField> Ipfe<F> for Clt<F> {
     type Error = CltError;
     type PublicKey = PublicKey<F>;
     type MasterSecretKey = MasterSecretKey<F>;
@@ -283,11 +279,11 @@ impl<F: PrimeField> Ipfe<F> for Params<F> {
     type Ciphertext = Ciphertext<F>;
 
     fn setup(
-        params: &Arc<Self>,
+        scheme: &Arc<Self>,
         dimension: usize,
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<(PublicKey<F>, MasterSecretKey<F>), CltError> {
-        Ok(setup(params, dimension, rng))
+        Ok(setup(scheme, dimension, rng))
     }
 
     fn dimension(public_key: &PublicKey<F>) -> usize {

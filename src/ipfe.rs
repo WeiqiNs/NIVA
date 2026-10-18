@@ -10,14 +10,14 @@ type FunctionKeys<F, S> = (
 
 pub trait Ipfe<F: PrimeField>: Debug {
     type Error: std::error::Error;
-    type PublicKey: Clone + Sync + IpfePublicKey<F, Scheme = Self>;
+    type PublicKey: Clone + Debug + Sync;
     type MasterSecretKey;
     type DecryptionKey: Debug;
     type FunctionKey: Clone + Sync;
     type Ciphertext: Clone + Send + Sync;
 
     fn setup(
-        params: &Arc<Self>,
+        scheme: &Arc<Self>,
         dimension: usize,
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<(Self::PublicKey, Self::MasterSecretKey), Self::Error>;
@@ -70,8 +70,4 @@ pub trait Ipfe<F: PrimeField>: Debug {
     ) -> Result<Self::DecryptionKey, Self::Error>;
 
     fn truncate(ciphertext: Self::Ciphertext, len: usize) -> Result<Self::Ciphertext, Self::Error>;
-}
-
-pub trait IpfePublicKey<F: PrimeField> {
-    type Scheme: Ipfe<F, PublicKey = Self>;
 }

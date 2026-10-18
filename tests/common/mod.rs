@@ -3,8 +3,8 @@
 use ark_std::rand::SeedableRng;
 use ark_std::rand::rngs::StdRng;
 use niva::Field128;
-use niva::clt::Params;
-use niva::lattice;
+use niva::clt::Clt;
+use niva::lattice::Lattice;
 use std::sync::Arc;
 
 pub const TEST_DISCRIMINANT_BITS: u32 = 320;
@@ -14,10 +14,10 @@ pub fn rng() -> StdRng {
     StdRng::seed_from_u64(11)
 }
 
-pub fn params() -> Arc<Params<Field128>> {
-    Arc::new(Params::generate(TEST_DISCRIMINANT_BITS, &mut rng()).unwrap())
+pub fn clt() -> Arc<Clt<Field128>> {
+    Arc::new(Clt::generate(TEST_DISCRIMINANT_BITS, &mut rng()).unwrap())
 }
 
-pub fn lattice_params() -> Arc<lattice::Params<Field128>> {
-    Arc::new(lattice::Params::new(TEST_RING_DIMENSION).unwrap())
+pub fn lattice() -> Arc<Lattice<Field128>> {
+    Arc::new(Lattice::new(TEST_RING_DIMENSION).unwrap())
 }

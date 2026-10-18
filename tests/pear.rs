@@ -1,11 +1,11 @@
 mod common;
 
 use ark_ff::{AdditiveGroup, Field};
-use common::{TEST_DISCRIMINANT_BITS, lattice_params, params, rng};
-use niva::clt::{Ciphertext, Params, PublicKey};
-use niva::lattice::MAX_DIMENSION;
+use common::{TEST_DISCRIMINANT_BITS, clt, lattice, rng};
+use niva::clt::{Ciphertext, Clt};
+use niva::lattice::{Lattice, MAX_DIMENSION};
 use niva::pear::{Analyst, Client, Contribution, Server, Setup};
-use niva::{CltError, Field128, Ipfe, LatticeError, PearError, lattice};
+use niva::{CltError, Field128, Ipfe, LatticeError, PearError};
 use rust_flpcp::{Circuit, Flp, FlpError, MeanVariance, NormBound, Range};
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -36,14 +36,14 @@ fn shape<C: Circuit<Field128>>(circuit: C) -> (usize, usize) {
 }
 
 fn roles<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
-    params: &Arc<S>,
+    scheme: &Arc<S>,
     circuit: &C,
     payload_len: usize,
 ) -> Roles<S, C>
 where
     PearError: From<S::Error>,
 {
-    let setup = Analyst::setup(params, circuit.clone(), payload_len, &mut rng()).unwrap();
+    let setup = Analyst::setup(scheme, circuit.clone(), payload_len, &mut rng()).unwrap();
     let client = Client::new(circuit.clone(), setup.public_key.clone()).unwrap();
     let server = Server::new(
         circuit.clone(),
@@ -55,14 +55,14 @@ where
 }
 
 fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
-    params: &Arc<S>,
+    scheme: &Arc<S>,
     case: &Case<C>,
 ) where
     PearError: From<S::Error>,
 {
     let mut rng = rng();
-    let label = format!("{params:?} {:?}", case.circuit);
-    let (setup, client, server) = roles(params, &case.circuit, case.payload_len);
+    let label = format!("{scheme:?} {:?}", case.circuit);
+    let (setup, client, server) = roles(scheme, &case.circuit, case.payload_len);
 
     let contributions: Vec<Contribution<Field128, S>> = case
         .honest
@@ -77,7 +77,7 @@ fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
 
     let flp = Flp::new(case.circuit.clone()).unwrap();
     let vector = flp.prove(&case.honest[0], &mut rng).unwrap();
-    let public_key = &setup.public_key;
+    let public_key = &setup.public_key.0;
     let untampered = S::encrypt(public_key, &vector, &mut rng).unwrap();
     assert!(server.validate(untampered).is_some(), "{label}");
     let input_len = case.circuit.input_len();
@@ -107,12 +107,12 @@ fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
     );
 }
 
-fn assert_cases<S: Ipfe<Field128>>(params: &Arc<S>)
+fn assert_cases<S: Ipfe<Field128>>(scheme: &Arc<S>)
 where
     PearError: From<S::Error>,
 {
     assert_protocol(
-        params,
+        scheme,
         &Case {
             circuit: Range::binary(4),
             payload_len: 4,
@@ -132,7 +132,7 @@ where
         square_chunk: None,
     };
     assert_protocol(
-        params,
+        scheme,
         &Case {
             honest: [[1, 2, 3], [7, 0, 0], [3, 3, 3]]
                 .iter()
@@ -151,7 +151,7 @@ where
     let mut wrong_square = mean_variance.encode(&[3, 5]);
     wrong_square[2] += Field128::ONE;
     assert_protocol(
-        params,
+        scheme,
         &Case {
             honest: [[0, 7], [3, 5], [6, 1]]
                 .iter()
@@ -166,13 +166,13 @@ where
 
 #[test]
 fn honest_clients_aggregate_and_invalid_clients_are_rejected() {
-    assert_cases(&params());
-    assert_cases(&lattice_params());
+    assert_cases(&clt());
+    assert_cases(&lattice());
 }
 
 #[test]
 fn aggregate_of_no_contributions_decrypts_to_zero() {
-    let (setup, _, server) = roles(&params(), &Range::binary(4), 3);
+    let (setup, _, server) = roles(&clt(), &Range::binary(4), 3);
     let aggregate = server.aggregate(&[], &mut rng()).unwrap();
     assert_eq!(
         setup.analyst.decrypt(&aggregate),
@@ -180,19 +180,19 @@ fn aggregate_of_no_contributions_decrypts_to_zero() {
     );
 }
 
-fn assert_foreign_rejected<S: Ipfe<Field128>>(params: &Arc<S>, foreign_params: &Arc<S>)
+fn assert_foreign_rejected<S: Ipfe<Field128>>(scheme: &Arc<S>, foreign_scheme: &Arc<S>)
 where
     PearError: From<S::Error>,
 {
     let mut rng = rng();
     let circuit = Range::binary(4);
-    let (_, client, server) = roles(params, &circuit, 4);
+    let (_, client, server) = roles(scheme, &circuit, 4);
     let input = values(&[1, 0, 0, 1]);
     let ciphertext = client.encrypt(&input, &mut rng).unwrap();
     let short = S::truncate(ciphertext.clone(), 4).unwrap();
     assert!(server.validate(short).is_none());
 
-    let foreign_setup = Analyst::setup(foreign_params, circuit.clone(), 4, &mut rng).unwrap();
+    let foreign_setup = Analyst::setup(foreign_scheme, circuit.clone(), 4, &mut rng).unwrap();
     let foreign_client = Client::new(circuit, foreign_setup.public_key).unwrap();
     let foreign = foreign_client.encrypt(&input, &mut rng).unwrap();
     assert!(server.validate(foreign).is_none());
@@ -201,18 +201,17 @@ where
 
 #[test]
 fn server_rejects_foreign_ciphertexts() {
-    let foreign_params =
-        Arc::new(Params::generate(TEST_DISCRIMINANT_BITS + 10, &mut rng()).unwrap());
-    assert_foreign_rejected(&params(), &foreign_params);
-    let lattice_params = lattice_params();
-    assert_foreign_rejected(&lattice_params, &lattice_params);
+    let foreign_scheme = Arc::new(Clt::generate(TEST_DISCRIMINANT_BITS + 10, &mut rng()).unwrap());
+    assert_foreign_rejected(&clt(), &foreign_scheme);
+    let lattice = lattice();
+    assert_foreign_rejected(&lattice, &lattice);
 }
 
 #[test]
 fn setup_errors() {
     let mut rng = rng();
     assert_eq!(
-        Analyst::setup(&params(), Range::binary(4), 5, &mut rng).err(),
+        Analyst::setup(&clt(), Range::binary(4), 5, &mut rng).err(),
         Some(PearError::PayloadTooLong {
             payload_len: 5,
             input_len: 4,
@@ -220,15 +219,15 @@ fn setup_errors() {
     );
     let oversized = Range::binary(MAX_DIMENSION);
     assert_eq!(
-        Analyst::setup(&lattice_params(), oversized.clone(), 1, &mut rng).err(),
+        Analyst::setup(&lattice(), oversized.clone(), 1, &mut rng).err(),
         Some(PearError::Lattice(LatticeError::DimensionTooLarge {
             dimension: shape(oversized).0,
             maximum: MAX_DIMENSION,
         }))
     );
 
-    let (setup, client, _) = roles(&params(), &Range::binary(4), 4);
-    let public_key: &PublicKey<Field128> = &setup.public_key;
+    let (setup, client, _) = roles(&clt(), &Range::binary(4), 4);
+    let public_key = &setup.public_key;
     assert_eq!(
         Client::new(Range::binary(8), public_key.clone()).err(),
         Some(PearError::CircuitMismatch)
@@ -258,7 +257,7 @@ fn setup_errors() {
         Some(PearError::CircuitMismatch)
     );
 
-    let (wider_setup, _, _) = roles(&params(), &Range::binary(8), 4);
+    let (wider_setup, _, _) = roles(&clt(), &Range::binary(8), 4);
     assert_eq!(shape(Range::binary(8)).1, shape(Range::binary(4)).1);
     assert_ne!(shape(Range::binary(8)).0, shape(Range::binary(4)).0);
     assert_eq!(
@@ -285,7 +284,7 @@ fn setup_errors() {
         shape(more_queries.clone()).0,
         shape(fewer_queries.clone()).0
     );
-    let (fewer_queries_setup, _, _) = roles(&params(), &fewer_queries, 2);
+    let (fewer_queries_setup, _, _) = roles(&clt(), &fewer_queries, 2);
     assert_eq!(
         Server::new(
             more_queries,
@@ -349,7 +348,7 @@ fn error_messages_are_distinct_lowercase_sentences() {
 
 #[test]
 fn verification_key_debug_is_redacted() {
-    let (setup, _, _) = roles(&params(), &Range::binary(4), 3);
+    let (setup, _, _) = roles(&clt(), &Range::binary(4), 3);
     assert_eq!(
         format!("{:?}", setup.verification_key),
         "VerificationKey { queries: 2, payload_len: 3, .. }"
@@ -357,13 +356,13 @@ fn verification_key_debug_is_redacted() {
 }
 
 fn assert_dimensions_checked<S: Ipfe<Field128>>(
-    params: &Arc<S>,
+    scheme: &Arc<S>,
     mismatch: impl Fn(usize, usize) -> S::Error,
 ) where
     S::Error: PartialEq,
 {
     let mut rng = rng();
-    let (public_key, _) = S::setup(params, 3, &mut rng).unwrap();
+    let (public_key, _) = S::setup(scheme, 3, &mut rng).unwrap();
     assert_eq!(
         S::encrypt(&public_key, &[Field128::ONE; 5], &mut rng).err(),
         Some(mismatch(3, 5))
@@ -378,11 +377,11 @@ fn assert_dimensions_checked<S: Ipfe<Field128>>(
 
 #[test]
 fn backend_operations_check_dimensions() {
-    assert_dimensions_checked(&params(), |expected, actual| CltError::DimensionMismatch {
+    assert_dimensions_checked(&clt(), |expected, actual| CltError::DimensionMismatch {
         expected,
         actual,
     });
-    assert_dimensions_checked(&lattice_params(), |expected, actual| {
+    assert_dimensions_checked(&lattice(), |expected, actual| {
         LatticeError::DimensionMismatch { expected, actual }
     });
 }
@@ -395,9 +394,9 @@ fn protocol_types_are_thread_safe() {
     assert_send_sync::<Client<Field128, Range>>();
     assert_send_sync::<Server<Field128, Range>>();
     assert_send_sync::<Contribution<Field128>>();
-    assert_send_sync::<lattice::MasterSecretKey<Field128>>();
-    assert_send_sync::<Analyst<Field128, lattice::Params<Field128>>>();
-    assert_send_sync::<Client<Field128, Range, lattice::Params<Field128>>>();
-    assert_send_sync::<Server<Field128, Range, lattice::Params<Field128>>>();
-    assert_send_sync::<Contribution<Field128, lattice::Params<Field128>>>();
+    assert_send_sync::<niva::lattice::MasterSecretKey<Field128>>();
+    assert_send_sync::<Analyst<Field128, Lattice<Field128>>>();
+    assert_send_sync::<Client<Field128, Range, Lattice<Field128>>>();
+    assert_send_sync::<Server<Field128, Range, Lattice<Field128>>>();
+    assert_send_sync::<Contribution<Field128, Lattice<Field128>>>();
 }

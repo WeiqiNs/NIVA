@@ -1,11 +1,11 @@
 mod params;
 mod ring;
 
-pub use params::{Headroom150, Headroom150Config, LatticeField, Params};
+pub use params::{Headroom150, Headroom150Config, Lattice, LatticeField};
 
 use crate::debug::redacted;
 use crate::error::LatticeError;
-use crate::ipfe::{Ipfe, IpfePublicKey};
+use crate::ipfe::Ipfe;
 use crate::linear_algebra::linearly_independent;
 use crate::sampling::centered_binomial;
 use ark_std::cfg_iter;
@@ -20,18 +20,18 @@ pub const MAX_DIMENSION: usize = 8192;
 
 #[derive(Clone)]
 pub struct PublicKey<F: LatticeField> {
-    params: Arc<Params<F>>,
+    params: Arc<Lattice<F>>,
     mask: Arc<Polynomial<F>>,
     bases: Arc<Vec<Polynomial<F>>>,
 }
 
 pub struct MasterSecretKey<F: LatticeField> {
-    params: Arc<Params<F>>,
+    params: Arc<Lattice<F>>,
     secrets: Vec<Polynomial<F>>,
 }
 
 pub struct DecryptionKey<F: LatticeField> {
-    params: Arc<Params<F>>,
+    params: Arc<Lattice<F>>,
     secrets: Vec<Polynomial<F>>,
 }
 
@@ -62,7 +62,7 @@ fn check_prefix(len: usize, dimension: usize) -> Result<(), LatticeError> {
 }
 
 fn check_ring<F: LatticeField>(
-    params: &Params<F>,
+    params: &Lattice<F>,
     polynomial: &Polynomial<F>,
 ) -> Result<(), LatticeError> {
     let expected = params.ring_dimension();
@@ -74,7 +74,7 @@ fn check_ring<F: LatticeField>(
 }
 
 pub fn setup<F: LatticeField>(
-    params: &Arc<Params<F>>,
+    params: &Arc<Lattice<F>>,
     dimension: usize,
     rng: &mut (impl CryptoRng + RngCore),
 ) -> Result<(PublicKey<F>, MasterSecretKey<F>), LatticeError> {
@@ -314,11 +314,7 @@ impl<F: LatticeField> fmt::Debug for Ciphertext<F> {
     }
 }
 
-impl<F: LatticeField> IpfePublicKey<F> for PublicKey<F> {
-    type Scheme = Params<F>;
-}
-
-impl<F: LatticeField> Ipfe<F> for Params<F> {
+impl<F: LatticeField> Ipfe<F> for Lattice<F> {
     type Error = LatticeError;
     type PublicKey = PublicKey<F>;
     type MasterSecretKey = MasterSecretKey<F>;
@@ -327,11 +323,11 @@ impl<F: LatticeField> Ipfe<F> for Params<F> {
     type Ciphertext = Ciphertext<F>;
 
     fn setup(
-        params: &Arc<Self>,
+        scheme: &Arc<Self>,
         dimension: usize,
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<(PublicKey<F>, MasterSecretKey<F>), LatticeError> {
-        setup(params, dimension, rng)
+        setup(scheme, dimension, rng)
     }
 
     fn dimension(public_key: &PublicKey<F>) -> usize {

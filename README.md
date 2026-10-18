@@ -12,7 +12,7 @@ and an analyst learns only the sum. Each client encrypts its input together with
 groups; the server holds function keys for the proof's linear queries, so it checks the proof on ciphertexts.
 
 ```rust
-use niva::clt::{DISCRIMINANT_BITS, Params};
+use niva::clt::{Clt, DISCRIMINANT_BITS};
 use niva::pear::{Analyst, Client, Server};
 use niva::Field128;
 use rand::rngs::OsRng;
@@ -20,9 +20,9 @@ use rust_flpcp::Range;
 use std::sync::Arc;
 
 let rng = &mut OsRng;
-let params = Arc::new(Params::<Field128>::generate(DISCRIMINANT_BITS, rng)?);
+let scheme = Arc::new(Clt::<Field128>::generate(DISCRIMINANT_BITS, rng)?);
 let circuit = Range::binary(4);
-let setup = Analyst::setup(&params, circuit.clone(), 4, rng)?;
+let setup = Analyst::setup(&scheme, circuit.clone(), 4, rng)?;
 let client = Client::new(circuit.clone(), setup.public_key.clone())?;
 let server = Server::new(circuit, setup.public_key, setup.verification_key)?;
 
@@ -55,18 +55,17 @@ Run `cargo run --example costs` for each rule's ciphertext size and query count.
 
 ## Backends
 
-The protocol is generic over the `Ipfe` trait, and the backend follows from the parameters passed to
-`Analyst::setup`:
+The protocol is generic over the `Ipfe` trait, and the backend follows from the scheme passed to `Analyst::setup`:
 
-- `clt::Params` (the default): the class-group scheme above, the one the paper's security proof covers.
-- `lattice::Params`: a research-grade RLWE scheme after
+- `clt::Clt` (the default): the class-group scheme above, the one the paper's security proof covers.
+- `lattice::Lattice`: a research-grade RLWE scheme after
   [Bermudo Mera, Karmakar, Marc and Soleimanian (PKC 2022)](https://eprint.iacr.org/2021/046), adapted to inner
   products modulo the field's prime, with ring dimension 16384 and a 278-bit modulus. It is here for speed
   comparisons: its parameters come from the lattice estimator, so its security is heuristic.
 
 ```rust
-let params = Arc::new(lattice::Params::<Field128>::new(Field128::RING_DIMENSION)?);
-let setup = Analyst::setup(&params, circuit.clone(), 4, rng)?;
+let scheme = Arc::new(lattice::Lattice::<Field128>::new(Field128::RING_DIMENSION)?);
+let setup = Analyst::setup(&scheme, circuit.clone(), 4, rng)?;
 ```
 
 ## Security notes

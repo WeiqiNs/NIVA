@@ -4,10 +4,10 @@ use criterion::measurement::WallTime;
 use criterion::{
     BatchSize, BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main,
 };
-use niva::clt::DISCRIMINANT_BITS;
-use niva::lattice::LatticeField;
+use niva::clt::{Clt, DISCRIMINANT_BITS};
+use niva::lattice::{Lattice, LatticeField};
 use niva::pear::{Analyst, Contribution, Server};
-use niva::{Field128, Ipfe, PearError, clt, lattice};
+use niva::{Field128, Ipfe, PearError};
 use rust_flpcp::{Circuit, Flp, NormBound, Range};
 use std::cell::OnceCell;
 use std::hint::black_box;
@@ -38,7 +38,7 @@ fn measurement(len: usize, modulus: u64) -> Vec<u64> {
 }
 
 fn fixture<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
-    params: &Arc<S>,
+    scheme: &Arc<S>,
     config: &Config<C>,
 ) -> Fixture<S, C>
 where
@@ -46,7 +46,7 @@ where
 {
     let mut rng = StdRng::seed_from_u64(1);
     let circuit = &config.circuit;
-    let setup = Analyst::setup(params, circuit.clone(), config.payload_len, &mut rng).unwrap();
+    let setup = Analyst::setup(scheme, circuit.clone(), config.payload_len, &mut rng).unwrap();
     let server = Server::new(
         circuit.clone(),
         setup.public_key.clone(),
@@ -55,7 +55,7 @@ where
     .unwrap();
     let flp = Flp::new(circuit.clone()).unwrap();
     let vector = flp.prove(&config.input, &mut rng).unwrap();
-    let ciphertext = S::encrypt(&setup.public_key, &vector, &mut rng).unwrap();
+    let ciphertext = S::encrypt(&setup.public_key.0, &vector, &mut rng).unwrap();
     let contribution = server.validate(ciphertext.clone()).unwrap();
     let contributions = [contribution.clone(), contribution];
     let aggregate = server.aggregate(&contributions, &mut rng).unwrap();
@@ -71,7 +71,7 @@ where
     );
     Fixture {
         analyst: setup.analyst,
-        public_key: setup.public_key,
+        public_key: setup.public_key.0,
         server,
         flp,
         vector,
@@ -83,18 +83,18 @@ where
 
 fn bench_config<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
     group: &mut BenchmarkGroup<'_, WallTime>,
-    params: &Arc<S>,
+    scheme: &Arc<S>,
     config: &Config<C>,
 ) where
     PearError: From<S::Error>,
 {
     let mut rng = StdRng::seed_from_u64(2);
     let cell = OnceCell::new();
-    let fixture = || cell.get_or_init(|| fixture(params, config));
+    let fixture = || cell.get_or_init(|| fixture(scheme, config));
     let id = |name| BenchmarkId::new(name, config.len);
     group.bench_function(id("setup"), |b| {
         b.iter(|| {
-            Analyst::setup(params, config.circuit.clone(), config.payload_len, &mut rng).unwrap()
+            Analyst::setup(scheme, config.circuit.clone(), config.payload_len, &mut rng).unwrap()
         });
     });
     group.bench_function(id("prove"), |b| {
@@ -139,7 +139,7 @@ fn bench_config<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
 
 fn bench_rule<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
     c: &mut Criterion,
-    params: &Arc<S>,
+    scheme: &Arc<S>,
     label: &str,
     config: impl Fn(usize) -> Config<C>,
 ) where
@@ -148,16 +148,16 @@ fn bench_rule<S: Ipfe<Field128>, C: Circuit<Field128> + Clone>(
     let mut group = c.benchmark_group(label);
     group.sample_size(10);
     for len in LENS {
-        bench_config(&mut group, params, &config(len));
+        bench_config(&mut group, scheme, &config(len));
     }
     group.finish();
 }
 
-fn bench_backend<S: Ipfe<Field128>>(c: &mut Criterion, backend: &str, params: &Arc<S>)
+fn bench_backend<S: Ipfe<Field128>>(c: &mut Criterion, backend: &str, scheme: &Arc<S>)
 where
     PearError: From<S::Error>,
 {
-    bench_rule(c, params, &format!("{backend}/binary"), |len| Config {
+    bench_rule(c, scheme, &format!("{backend}/binary"), |len| Config {
         len,
         circuit: Range::binary(len),
         input: measurement(len, 2)
@@ -166,7 +166,7 @@ where
             .collect(),
         payload_len: len,
     });
-    bench_rule(c, params, &format!("{backend}/norm_bound"), |len| {
+    bench_rule(c, scheme, &format!("{backend}/norm_bound"), |len| {
         let circuit = NormBound {
             len,
             input_bits: 10,
@@ -184,10 +184,10 @@ where
 
 fn backends(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(0);
-    let clt_params = Arc::new(clt::Params::generate(DISCRIMINANT_BITS, &mut rng).unwrap());
-    bench_backend(c, "clt", &clt_params);
-    let lattice_params = Arc::new(lattice::Params::new(Field128::RING_DIMENSION).unwrap());
-    bench_backend(c, "lattice", &lattice_params);
+    let clt = Arc::new(Clt::generate(DISCRIMINANT_BITS, &mut rng).unwrap());
+    bench_backend(c, "clt", &clt);
+    let lattice = Arc::new(Lattice::new(Field128::RING_DIMENSION).unwrap());
+    bench_backend(c, "lattice", &lattice);
 }
 
 criterion_group!(benches, backends);

@@ -1,6 +1,6 @@
-use crate::clt::Params;
+use crate::clt::Clt;
 use crate::error::PearError;
-use crate::ipfe::{Ipfe, IpfePublicKey};
+use crate::ipfe::Ipfe;
 use ark_ff::PrimeField;
 use ark_std::cfg_iter;
 use ark_std::rand::{CryptoRng, RngCore};
@@ -11,31 +11,34 @@ use std::fmt;
 use std::sync::Arc;
 
 #[derive(Debug)]
-pub struct Analyst<F: PrimeField, S: Ipfe<F> = Params<F>> {
+pub struct Analyst<F: PrimeField, S: Ipfe<F> = Clt<F>> {
     secret: S::DecryptionKey,
 }
 
 #[derive(Debug)]
-pub struct Setup<F: PrimeField, S: Ipfe<F> = Params<F>> {
+pub struct Setup<F: PrimeField, S: Ipfe<F> = Clt<F>> {
     pub analyst: Analyst<F, S>,
-    pub public_key: S::PublicKey,
+    pub public_key: PublicKey<F, S>,
     pub verification_key: VerificationKey<F, S>,
 }
 
-pub struct VerificationKey<F: PrimeField, S: Ipfe<F> = Params<F>> {
+#[derive(Debug)]
+pub struct PublicKey<F: PrimeField, S: Ipfe<F> = Clt<F>>(pub S::PublicKey);
+
+pub struct VerificationKey<F: PrimeField, S: Ipfe<F> = Clt<F>> {
     query: Query<F>,
     function_keys: Vec<S::FunctionKey>,
     payload_len: usize,
 }
 
 #[derive(Debug)]
-pub struct Client<F: PrimeField, C, S: Ipfe<F> = Params<F>> {
+pub struct Client<F: PrimeField, C, S: Ipfe<F> = Clt<F>> {
     flp: Flp<F, C>,
     public_key: S::PublicKey,
 }
 
 #[derive(Debug)]
-pub struct Server<F: PrimeField, C, S: Ipfe<F> = Params<F>> {
+pub struct Server<F: PrimeField, C, S: Ipfe<F> = Clt<F>> {
     flp: Flp<F, C>,
     public_key: S::PublicKey,
     payload_key: S::PublicKey,
@@ -43,7 +46,13 @@ pub struct Server<F: PrimeField, C, S: Ipfe<F> = Params<F>> {
 }
 
 #[derive(Debug)]
-pub struct Contribution<F: PrimeField, S: Ipfe<F> = Params<F>>(S::Ciphertext);
+pub struct Contribution<F: PrimeField, S: Ipfe<F> = Clt<F>>(S::Ciphertext);
+
+impl<F: PrimeField, S: Ipfe<F>> Clone for PublicKey<F, S> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 impl<F: PrimeField, S: Ipfe<F>> Clone for VerificationKey<F, S> {
     fn clone(&self) -> Self {
@@ -99,7 +108,7 @@ where
     PearError: From<S::Error>,
 {
     pub fn setup<C: Circuit<F>>(
-        params: &Arc<S>,
+        scheme: &Arc<S>,
         circuit: C,
         payload_len: usize,
         rng: &mut (impl CryptoRng + RngCore),
@@ -112,7 +121,7 @@ where
             });
         }
         let flp = Flp::new(circuit)?;
-        let (public_key, secret_key) = S::setup(params, flp.vector_len(), rng)?;
+        let (public_key, secret_key) = S::setup(scheme, flp.vector_len(), rng)?;
         let query = flp.query(rng);
         let vectors: Vec<&[F]> = query
             .linear_queries()
@@ -124,7 +133,7 @@ where
             analyst: Self {
                 secret: S::prefix_decryption_key(&decryption_key, payload_len)?,
             },
-            public_key,
+            public_key: PublicKey(public_key),
             verification_key: VerificationKey {
                 query,
                 function_keys,
@@ -142,11 +151,7 @@ impl<F: PrimeField, C: Circuit<F>, S: Ipfe<F>> Client<F, C, S>
 where
     PearError: From<S::Error>,
 {
-    pub fn new<K>(circuit: C, public_key: K) -> Result<Self, PearError>
-    where
-        K: IpfePublicKey<F, Scheme = S>,
-        S: Ipfe<F, PublicKey = K>,
-    {
+    pub fn new(circuit: C, PublicKey(public_key): PublicKey<F, S>) -> Result<Self, PearError> {
         let flp = Flp::new(circuit)?;
         if S::dimension(&public_key) != flp.vector_len() {
             return Err(PearError::CircuitMismatch);
@@ -170,7 +175,7 @@ where
 {
     pub fn new(
         circuit: C,
-        public_key: S::PublicKey,
+        PublicKey(public_key): PublicKey<F, S>,
         verification_key: VerificationKey<F, S>,
     ) -> Result<Self, PearError> {
         let input_len = circuit.input_len();
@@ -257,7 +262,7 @@ mod tests {
         assert!(server.validate(ciphertext.clone()).is_some());
         assert!(
             server
-                .validate(shift_randomness(&setup.public_key, ciphertext))
+                .validate(shift_randomness(&setup.public_key.0, ciphertext))
                 .is_none()
         );
     }

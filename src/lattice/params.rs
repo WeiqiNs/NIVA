@@ -21,7 +21,7 @@ pub struct Headroom150Config;
 
 pub type Headroom150 = Fp192<MontBackend<Headroom150Config, 3>>;
 
-pub struct Params<F: LatticeField> {
+pub struct Lattice<F: LatticeField> {
     field_ring: Ring<F>,
     headroom_ring: Ring<F::Headroom>,
     delta: F,
@@ -65,7 +65,7 @@ fn accumulate<K: PrimeField>(sum: &mut [K], coefficient: K, values: &[K]) {
     }
 }
 
-impl<F: LatticeField> Params<F> {
+impl<F: LatticeField> Lattice<F> {
     pub fn new(ring_dimension: usize) -> Result<Self, LatticeError> {
         let error = LatticeError::RingDimension {
             dimension: ring_dimension,
@@ -263,9 +263,9 @@ impl<F: LatticeField> Mul for &Polynomial<F> {
     }
 }
 
-impl<F: LatticeField> fmt::Debug for Params<F> {
+impl<F: LatticeField> fmt::Debug for Lattice<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Params")
+        f.debug_struct("Lattice")
             .field("ring_dimension", &self.ring_dimension())
             .finish_non_exhaustive()
     }
@@ -273,7 +273,7 @@ impl<F: LatticeField> fmt::Debug for Params<F> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{Headroom150, LatticeField, Params};
+    use super::{Headroom150, Lattice, LatticeField};
     use crate::Field128;
     use crate::error::LatticeError;
     use crate::lattice::MAX_DIMENSION;
@@ -294,8 +294,8 @@ pub(crate) mod tests {
         StdRng::seed_from_u64(5)
     }
 
-    pub(crate) fn test_params() -> Params<Field128> {
-        Params::new(TEST_RING_DIMENSION).unwrap()
+    pub(crate) fn test_params() -> Lattice<Field128> {
+        Lattice::new(TEST_RING_DIMENSION).unwrap()
     }
 
     pub(crate) fn integer(value: &impl BigInteger) -> UBig {
@@ -347,15 +347,15 @@ pub(crate) mod tests {
         assert_eq!(params.ring_dimension(), TEST_RING_DIMENSION);
         assert_eq!(
             format!("{params:?}"),
-            format!("Params {{ ring_dimension: {TEST_RING_DIMENSION}, .. }}")
+            format!("Lattice {{ ring_dimension: {TEST_RING_DIMENSION}, .. }}")
         );
         assert_eq!(params.delta * params.delta_inverse, Field128::ONE);
         for dimension in [1, 1000, 2 * ring_dimension] {
             assert_eq!(
-                Params::<Field128>::new(dimension).err(),
+                Lattice::<Field128>::new(dimension).err(),
                 Some(LatticeError::RingDimension { dimension })
             );
         }
-        assert!(Params::<Field128>::new(ring_dimension).is_ok());
+        assert!(Lattice::<Field128>::new(ring_dimension).is_ok());
     }
 }
