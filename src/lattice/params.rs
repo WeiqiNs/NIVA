@@ -1,10 +1,11 @@
 use super::ring::Ring;
 use crate::Field128;
 use crate::error::LatticeError;
-use crate::sampling::centered_binomial;
+use crate::sampling::centered_binomials;
 use ark_ff::fields::{Fp192, MontBackend, MontConfig};
 use ark_ff::{AdditiveGroup, BigInteger, PrimeField, UniformRand};
-use ark_std::rand::{CryptoRng, RngCore};
+use ark_std::rand::rngs::StdRng;
+use ark_std::rand::{CryptoRng, RngCore, SeedableRng};
 use std::fmt;
 use std::iter::Sum;
 use std::ops::{Add, Mul, Sub};
@@ -59,6 +60,16 @@ fn pointwise<K: Copy>(left: &[K], right: &[K], operation: impl Fn(K, K) -> K) ->
         .collect()
 }
 
+/// Maps `value` to the element of `L` congruent to its centred representative.
+fn centred<K: PrimeField, L: PrimeField>(value: K) -> L {
+    let magnitude = |value: K| L::from_le_bytes_mod_order(&value.into_bigint().to_bytes_le());
+    if value.into_bigint() <= K::MODULUS_MINUS_ONE_DIV_TWO {
+        magnitude(value)
+    } else {
+        -magnitude(-value)
+    }
+}
+
 fn accumulate<K: PrimeField>(sum: &mut [K], coefficient: K, values: &[K]) {
     for (entry, &value) in sum.iter_mut().zip(values) {
         *entry += coefficient * value;
@@ -96,12 +107,16 @@ impl<F: LatticeField> Lattice<F> {
     }
 
     pub(crate) fn sample_coefficients(&self, rng: &mut (impl CryptoRng + RngCore)) -> Vec<i64> {
-        (0..self.ring_dimension())
-            .map(|_| centered_binomial(rng))
-            .collect()
+        centered_binomials(self.ring_dimension(), rng)
     }
 
+    /// Samples the public mask A. Since A is public, it is expanded from a
+    /// 256-bit seed of `rng` with the `ChaCha` generator `StdRng` instead of calling `rng`
+    /// for every limb, which is slow with an OS-backed rng.
     pub(crate) fn sample_uniform(&self, rng: &mut (impl CryptoRng + RngCore)) -> Polynomial<F> {
+        let mut seed = <StdRng as SeedableRng>::Seed::default();
+        rng.fill_bytes(&mut seed);
+        let rng = &mut StdRng::from_seed(seed);
         let dimension = self.ring_dimension();
         Polynomial {
             field: (0..dimension).map(|_| F::rand(rng)).collect(),
@@ -158,18 +173,11 @@ impl<F: LatticeField> Lattice<F> {
     }
 
     fn noise(&self, headroom: F::Headroom) -> Result<F, LatticeError> {
-        let magnitude = |value: <F::Headroom as PrimeField>::BigInt| {
-            F::from_le_bytes_mod_order(&value.to_bytes_le())
-        };
-        let positive = headroom.into_bigint();
-        if positive <= self.noise_ceiling {
-            return Ok(magnitude(positive));
+        let magnitude = headroom.into_bigint().min((-headroom).into_bigint());
+        if magnitude > self.noise_ceiling {
+            return Err(LatticeError::NoiseTooLarge);
         }
-        let negative = (-headroom).into_bigint();
-        if negative <= self.noise_ceiling {
-            return Ok(-magnitude(negative));
-        }
-        Err(LatticeError::NoiseTooLarge)
+        Ok(centred(headroom))
     }
 }
 
@@ -182,16 +190,9 @@ impl<F: LatticeField> Residue<F> {
     }
 
     pub(crate) fn lift(value: F) -> Self {
-        let magnitude =
-            |value: F| F::Headroom::from_le_bytes_mod_order(&value.into_bigint().to_bytes_le());
-        let headroom = if value.into_bigint() <= F::MODULUS_MINUS_ONE_DIV_TWO {
-            magnitude(value)
-        } else {
-            -magnitude(-value)
-        };
         Self {
             field: value,
-            headroom,
+            headroom: centred(value),
         }
     }
 }

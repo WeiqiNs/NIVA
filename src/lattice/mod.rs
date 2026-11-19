@@ -7,7 +7,7 @@ use crate::debug::redacted;
 use crate::error::LatticeError;
 use crate::ipfe::Ipfe;
 use crate::linear_algebra::linearly_independent;
-use crate::sampling::centered_binomial;
+use crate::sampling::centered_binomials;
 use ark_std::cfg_iter;
 use ark_std::rand::{CryptoRng, RngCore};
 use params::{Polynomial, Residue};
@@ -23,6 +23,8 @@ pub struct PublicKey<F: LatticeField> {
     params: Arc<Lattice<F>>,
     mask: Arc<Polynomial<F>>,
     bases: Arc<Vec<Polynomial<F>>>,
+    // Prefix keys share `bases` with the full key and use only its first `len` entries.
+    len: usize,
 }
 
 pub struct MasterSecretKey<F: LatticeField> {
@@ -105,6 +107,7 @@ pub fn setup<F: LatticeField>(
             params: Arc::clone(scheme),
             mask: Arc::new(mask),
             bases: Arc::new(bases),
+            len: dimension,
         },
         MasterSecretKey {
             params: Arc::clone(scheme),
@@ -116,7 +119,7 @@ pub fn setup<F: LatticeField>(
 impl<F: LatticeField> PublicKey<F> {
     #[must_use]
     pub fn dimension(&self) -> usize {
-        self.bases.len()
+        self.len
     }
 
     pub fn encrypt(
@@ -128,9 +131,9 @@ impl<F: LatticeField> PublicKey<F> {
         let params = &self.params;
         let randomness = params.forward(&params.sample_coefficients(rng));
         let offset = params.forward(&params.sample_coefficients(rng));
-        let noises: Vec<i64> = message.iter().map(|_| centered_binomial(rng)).collect();
+        let noises = centered_binomials(message.len(), rng);
         let coords = cfg_iter!(message)
-            .zip(self.bases.as_slice())
+            .zip(&self.bases[..self.len])
             .zip(noises)
             .map(|((&value, base), noise)| {
                 params.constant_term(base, &randomness)
@@ -192,7 +195,8 @@ impl<F: LatticeField> PublicKey<F> {
         Ok(Self {
             params: Arc::clone(&self.params),
             mask: Arc::clone(&self.mask),
-            bases: Arc::new(self.bases[..len].to_vec()),
+            bases: Arc::clone(&self.bases),
+            len,
         })
     }
 }
@@ -258,7 +262,7 @@ impl<F: LatticeField> DecryptionKey<F> {
 
 impl<F: LatticeField> fmt::Debug for PublicKey<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        redacted(f, "PublicKey", self.bases.len())
+        redacted(f, "PublicKey", self.len)
     }
 }
 

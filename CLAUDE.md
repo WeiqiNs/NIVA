@@ -56,10 +56,12 @@ lattice ciphertext and public-key sizes.
   generic over the scheme `S` with `clt::Clt<F>` as the default. `PublicKey` wraps the backend's public key so that
   `Client::new` and `Server::new` infer the scheme from it.
 - `src/class_group/mod.rs`: `Form` and `ClassGroup` (reduction, NUCOMP composition and NUDUPL squaring sharing one
-  `finish`, inverse, prime forms). `src/class_group/exp.rs`: `pow` (signed windows), `FixedBase`, `multi_exp`
+  `finish`, whose partial Euclid `partial_euclid` takes Lehmer chunks on the top 63 bits while `far` is 34 bits above
+  the NUCOMP bound, which keeps it step-for-step equal to single division steps (`partial_euclid_matches_single_steps`);
+  inverse, prime forms). `src/class_group/exp.rs`: `pow` (signed windows), `FixedBase`, `multi_exp`
   (Pippenger), all over one `bucket_product` and `signed_digits`.
 - `src/number_theory.rs`: `kronecker` and `is_probable_prime`. `src/sampling.rs`: `uniform_below`, the exact
-  integer-only `DiscreteGaussian` (Canonne, Kamath, Steinke 2020) and `centered_binomial`.
+  integer-only `DiscreteGaussian` (Canonne, Kamath, Steinke 2020) and `centered_binomials`, which draws a whole batch from one `fill_bytes` call.
   `src/linear_algebra.rs`: `linearly_independent`, shared by both backends' `function_keys`.
 - `src/error.rs`: `CltError`, `LatticeError`, `PearError`. `src/field.rs`: `Field128`.
 - `tests/`: `clt.rs`, `lattice.rs`, `pear.rs` (generic over the backend), `field.rs`, with `tests/common` holding the
@@ -83,7 +85,7 @@ lattice ciphertext and public-key sizes.
   multiplies by 2⁻¹ mod p.
 - The lattice backend works in R_q = Z_q[X]/(X^n + 1) with q = p·Δ, p = `F::MODULUS` and Δ the prime modulus of
   `F::Headroom`, so every value is a pair of residues, one per field, and ring elements are kept as negacyclic NTT
-  evaluations. `lattice::setup` publishes one uniform A and P_i = A·s_i + e_i with centred-binomial s_i, e_i.
+  evaluations. `lattice::setup` publishes one uniform A (expanded with `StdRng` from a 256-bit seed of the caller's rng) and P_i = A·s_i + e_i with centred-binomial s_i, e_i.
   `encrypt` draws r, f0 and f_i and outputs ct0 = A·r + f0 and c_i = constant term of P_i·r, plus f_i + Δ·x_i. A
   function key holds the centred lift ŷ of y and sk_y = Σ ŷ_i·s_i; `eval` computes Σ ŷ_i·c_i − constant term of
   ct0·sk_y, and `decrypt` does the same with each unit vector.
