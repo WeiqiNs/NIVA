@@ -25,9 +25,6 @@ pub(crate) fn uniform_below(bound: &UBig, rng: &mut (impl CryptoRng + RngCore)) 
     }
 }
 
-/// Draws `count` centred binomial samples of parameter `NOISE_ETA`, each from
-/// 64 fresh uniform bits. The bits come from one `fill_bytes` call, because a
-/// call per sample dominates sampling time with an OS-backed rng.
 pub(crate) fn centered_binomials(count: usize, rng: &mut (impl CryptoRng + RngCore)) -> Vec<i64> {
     let mask = (1u64 << NOISE_ETA) - 1;
     let mut bytes = vec![0u8; count * 8];

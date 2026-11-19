@@ -147,15 +147,9 @@ impl ClassGroup {
     }
 }
 
-/// Bits of `far` read by one Lehmer chunk, so that every intermediate value
-/// of the chunk fits comfortably in an `i128`.
 const LEHMER_BITS: usize = 63;
-/// A Lehmer chunk keeps every entry of its matrix below `2^LEHMER_COFACTOR_BITS`.
 const LEHMER_COFACTOR_BITS: u32 = 31;
 
-/// The state of NUCOMP's partial extended Euclid on `(far, near)`, with
-/// `far_coeff` and `near_coeff` the cofactors of the initial `near` and `odd`
-/// the parity of the number of division steps taken.
 #[derive(Debug, PartialEq, Eq)]
 struct Euclid {
     far: IBig,
@@ -174,17 +168,10 @@ impl Euclid {
         self.odd = !self.odd;
     }
 
-    /// Takes as many division steps as the top `LEHMER_BITS` of `far` and
-    /// `near` determine (Knuth, TAOCP vol. 2, Algorithm 4.5.2L), then applies
-    /// them to the full values at once. Each quotient taken is bracketed by two
-    /// estimates that agree, so it equals the true quotient and the result is
-    /// the state after that many single steps.
     fn lehmer_chunk(&mut self) {
         let shift = self.far.bit_len().saturating_sub(LEHMER_BITS);
         let top = |value: &IBig| i128::try_from(&(value >> shift)).expect("top bits fit in i128");
         let (mut far_top, mut near_top) = (top(&self.far), top(&self.near));
-        // Rows of the chunk's matrix: far = far_row · (far, near) at the
-        // start, and likewise for near. Knuth's (A, B) and (C, D).
         let (mut far_row, mut near_row) = ([1_i128, 0], [0_i128, 1]);
         let cap = 1_i128 << LEHMER_COFACTOR_BITS;
         let mut odd = false;
@@ -218,15 +205,6 @@ impl Euclid {
     }
 }
 
-/// Runs the extended Euclid on `(far, near)` until `near <= bound`, with the
-/// same result as single division steps.
-///
-/// A Lehmer chunk whose matrix entries are below `M = 2^LEHMER_COFACTOR_BITS`
-/// ends with `far_end > far_start / 2M`: the matrix is unimodular, so
-/// `far_start = |D|·far_end + |B|·near_end` with `near_end < far_end`. Running
-/// a chunk only while `far` has `LEHMER_COFACTOR_BITS + 3` more bits than
-/// `bound` therefore keeps every remainder the chunk divides by above `bound`,
-/// so no chunk steps past the point where the single-step loop stops.
 fn partial_euclid(far: IBig, near: IBig, bound: &IBig) -> Euclid {
     let lehmer_bits = bound.bit_len() + LEHMER_COFACTOR_BITS as usize + 3;
     let mut state = Euclid {
@@ -240,8 +218,6 @@ fn partial_euclid(far: IBig, near: IBig, bound: &IBig) -> Euclid {
         if state.far.bit_len() >= lehmer_bits {
             state.lehmer_chunk();
         }
-        // A chunk may make no progress (its first quotient is ambiguous) or
-        // may end exactly where the loop stops, so the single step is guarded.
         if state.near > *bound {
             state.step();
         }

@@ -60,7 +60,6 @@ fn pointwise<K: Copy>(left: &[K], right: &[K], operation: impl Fn(K, K) -> K) ->
         .collect()
 }
 
-/// Maps `value` to the element of `L` congruent to its centred representative.
 fn centred<K: PrimeField, L: PrimeField>(value: K) -> L {
     let magnitude = |value: K| L::from_le_bytes_mod_order(&value.into_bigint().to_bytes_le());
     if value.into_bigint() <= K::MODULUS_MINUS_ONE_DIV_TWO {
@@ -110,9 +109,6 @@ impl<F: LatticeField> Lattice<F> {
         centered_binomials(self.ring_dimension(), rng)
     }
 
-    /// Samples the public mask A. Since A is public, it is expanded from a
-    /// 256-bit seed of `rng` with the `ChaCha` generator `StdRng` instead of calling `rng`
-    /// for every limb, which is slow with an OS-backed rng.
     pub(crate) fn sample_uniform(&self, rng: &mut (impl CryptoRng + RngCore)) -> Polynomial<F> {
         let mut seed = <StdRng as SeedableRng>::Seed::default();
         rng.fill_bytes(&mut seed);

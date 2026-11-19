@@ -170,8 +170,6 @@ pub(crate) fn multi_exp(group: &ClassGroup, bases: &[Form], exponents: &[IBig]) 
         .zip(cfg_chunks!(exponents, chunk))
         .filter_map(|(bases, exponents)| pippenger(group, bases, exponents))
         .collect();
-    // Folding through `accumulate` rather than `reduce` keeps the combining
-    // closure live without `parallel`, where there is only one chunk.
     partials
         .iter()
         .fold(None, |total, partial| {

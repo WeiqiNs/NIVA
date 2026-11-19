@@ -79,8 +79,6 @@ impl<F: PrimeField, S: Ipfe<F>> Clone for Contribution<F, S> {
     }
 }
 
-/// Adds every item onto `first`, borrowing the items so that none is cloned
-/// (under `parallel`, at most one clone per rayon split).
 #[cfg(feature = "parallel")]
 fn sum_onto<T: Clone + Send + Sync, E: Send>(
     first: T,
@@ -109,7 +107,6 @@ fn sum_onto<T: Clone + Send + Sync, E: Send>(
     }
 }
 
-/// Adds every item onto `first`, borrowing the items so that none is cloned.
 #[cfg(not(feature = "parallel"))]
 fn sum_onto<T, E>(first: T, items: &[T], add: impl Fn(&T, &T) -> Result<T, E>) -> Result<T, E> {
     items.iter().try_fold(first, |sum, item| add(&sum, item))

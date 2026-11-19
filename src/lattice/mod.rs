@@ -23,7 +23,6 @@ pub struct PublicKey<F: LatticeField> {
     params: Arc<Lattice<F>>,
     mask: Arc<Polynomial<F>>,
     bases: Arc<Vec<Polynomial<F>>>,
-    // Prefix keys share `bases` with the full key and use only its first `len` entries.
     len: usize,
 }
 
