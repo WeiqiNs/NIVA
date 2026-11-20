@@ -78,11 +78,10 @@ pub(crate) fn is_probable_prime(n: &UBig, rng: &mut (impl CryptoRng + RngCore)) 
         }
     }
     let random_base_bound = n - UBig::from(3u8);
-    passes_miller_rabin(n, &UBig::from(2u8))
-        && (0..PRIMALITY_ROUNDS).all(|_| {
-            let base = uniform_below(&random_base_bound, rng) + UBig::from(2u8);
-            passes_miller_rabin(n, &base)
-        })
+    (0..PRIMALITY_ROUNDS).all(|_| {
+        let base = uniform_below(&random_base_bound, rng) + UBig::from(2u8);
+        passes_miller_rabin(n, &base)
+    })
 }
 
 #[cfg(test)]

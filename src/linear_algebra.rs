@@ -21,3 +21,30 @@ pub(crate) fn linearly_independent<F: Field>(vectors: &[&[F]]) -> bool {
     }
     rank == rows.len()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::linearly_independent;
+    use crate::Field128;
+    use ark_ff::{AdditiveGroup, Field};
+
+    #[test]
+    fn rank_test_needs_no_pivot_in_the_first_row() {
+        let (zero, one) = (Field128::ZERO, Field128::ONE);
+        let vector = [one, Field128::from(5u8), zero];
+        let doubled = vector.map(|value| value.double());
+        let cases: [(&[&[Field128]], bool); 5] = [
+            (
+                &[&[zero, one, zero], &[one, zero, zero], &[zero, zero, one]],
+                true,
+            ),
+            (&[&[zero, one, zero], &[zero, zero, one]], true),
+            (&[&vector, &doubled], false),
+            (&[&[zero, zero, zero]], false),
+            (&[], true),
+        ];
+        for (vectors, expected) in cases {
+            assert_eq!(linearly_independent(vectors), expected, "{vectors:?}");
+        }
+    }
+}
