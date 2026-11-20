@@ -73,7 +73,7 @@ The lattice scheme pays in size: its public key grows by 569 KB per vector coord
 ```toml
 [dependencies]
 niva = { git = "https://github.com/WeiqiNs/NIVA" }
-rust_flpcp = { git = "https://github.com/WeiqiNs/RustFLPCP", rev = "905e46733c83dbc7b590365b30446f516dd269e7" }
+rust_flpcp = { git = "https://github.com/WeiqiNs/RustFLPCP", rev = "364baaa833273f59100ae3fb8ab5c2b69a6bd02c" }
 rand = "0.8"
 ```
 
