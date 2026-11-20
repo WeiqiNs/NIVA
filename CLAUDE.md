@@ -58,8 +58,8 @@ lattice ciphertext and public-key sizes.
 - `src/class_group/mod.rs`: `Form` and `ClassGroup` (reduction, NUCOMP composition and NUDUPL squaring sharing one
   `finish`, whose partial Euclid `partial_euclid` takes Lehmer chunks on the top 63 bits while `far` is 34 bits above
   the NUCOMP bound, which keeps it step-for-step equal to single division steps (`partial_euclid_matches_single_steps`);
-  inverse, prime forms). `src/class_group/exp.rs`: `pow` (signed windows), `FixedBase`, `multi_exp`
-  (Pippenger), all over one `bucket_product` and `signed_digits`.
+  inverse, prime forms). `src/class_group/exp.rs`: `pow` (signed windows), `FixedBase` and `multi_exp`
+  (Pippenger), all over `signed_digits`, the last two over one `bucket_product`.
 - `src/number_theory.rs`: `kronecker` and `is_probable_prime`. `src/sampling.rs`: `uniform_below`, the exact
   integer-only `DiscreteGaussian` (Canonne, Kamath, Steinke 2020) and `centered_binomials`, which draws a whole batch from one `fill_bytes` call.
   `src/linear_algebra.rs`: `linearly_independent`, shared by both backends' `function_keys`.

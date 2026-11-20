@@ -326,29 +326,45 @@ pub(crate) mod tests {
         let mut rng = rng();
         let below =
             |bits: usize, rng: &mut StdRng| IBig::from(uniform_below(&(UBig::ONE << bits), rng));
+        let mut cases: Vec<(IBig, IBig, IBig)> = [
+            ("17673702426535061663", "6305146098274789244", "24417728"),
+            ("31153264430787482134", "29273770990455090811", "908998472"),
+            ("12135845985762884607", "1768013423156119729", "7877861963"),
+            ("1267650600228229401496703205376", "5", "1"),
+            ("20365011039", "12586269080", "1"),
+            ("20365011075", "12586269023", "1"),
+        ]
+        .iter()
+        .map(|&(far, near, bound)| {
+            let parse = |value: &str| value.parse::<IBig>().unwrap();
+            (parse(far), parse(near), parse(bound))
+        })
+        .collect();
         for bits in [8, 40, 64, 100, 300, 1040] {
             for bound_bits in [1, 16, bits / 4, bits / 2, bits - 1] {
                 for _ in 0..25 {
                     let far = below(bits, &mut rng) + IBig::ONE;
                     let near = IBig::from(uniform_below(&(&far).unsigned_abs(), &mut rng));
-                    let bound = below(bound_bits, &mut rng) + IBig::ONE;
-                    let mut expected = Euclid {
-                        far: far.clone(),
-                        far_coeff: IBig::ZERO,
-                        near: near.clone(),
-                        near_coeff: IBig::ONE,
-                        odd: false,
-                    };
-                    while expected.near > bound {
-                        expected.step();
-                    }
-                    assert_eq!(
-                        partial_euclid(far.clone(), near.clone(), &bound),
-                        expected,
-                        "{far} {near} {bound}"
-                    );
+                    cases.push((far, near, below(bound_bits, &mut rng) + IBig::ONE));
                 }
             }
+        }
+        for (far, near, bound) in cases {
+            let mut expected = Euclid {
+                far: far.clone(),
+                far_coeff: IBig::ZERO,
+                near: near.clone(),
+                near_coeff: IBig::ONE,
+                odd: false,
+            };
+            while expected.near > bound {
+                expected.step();
+            }
+            assert_eq!(
+                partial_euclid(far.clone(), near.clone(), &bound),
+                expected,
+                "{far} {near} {bound}"
+            );
         }
     }
 
