@@ -135,7 +135,12 @@ impl FixedBase {
 }
 
 fn pippenger(group: &ClassGroup, bases: &[Form], exponents: &[IBig]) -> Option<Form> {
-    let window = bases.len().bit_width().saturating_sub(1).clamp(2, 16);
+    let bits = exponents.iter().map(BitTest::bit_len).max().unwrap_or(0);
+    let window = (2..=16)
+        .min_by_key(|&window: &u32| {
+            (bits + 1).div_ceil(window as usize) * (bases.len() + (1 << window))
+        })
+        .unwrap_or(2);
     let digits: Vec<Vec<i32>> = exponents
         .iter()
         .map(|exponent| signed_digits(exponent, window))

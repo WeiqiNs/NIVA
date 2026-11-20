@@ -129,6 +129,13 @@ fn prefix_restricts_keys_and_ciphertexts() {
         Ok(message[..2].to_vec())
     );
 
+    let whole_secret = decryption_key.prefix(5).unwrap();
+    assert_eq!(
+        whole_secret.decrypt(&ciphertext.clone().prefix(5).unwrap()),
+        Ok(message.clone())
+    );
+    assert_eq!(public_key.prefix(5).unwrap().dimension(), 5);
+
     let too_long = Some(LatticeError::PrefixTooLong {
         len: 6,
         dimension: 5,

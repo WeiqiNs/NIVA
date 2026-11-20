@@ -16,7 +16,7 @@ encryption keys, without decrypting.
 - **Two encryption schemes behind one `Ipfe` trait:** the class-group scheme of
   [Castagnos, Laguillaumie and Tucker](https://doi.org/10.1007/978-3-030-03329-3_25) that the paper's proof covers,
   and a research-grade lattice scheme after [Bermudo Mera et al. (PKC 2022)](https://eprint.iacr.org/2021/046) that
-  encrypts over 130 times faster.
+  encrypts over 50 times faster.
 - **Hardened beyond the paper:** decoding neutralises an order-2 class-group element that could make the aggregate
   undecryptable, and the analyst's key decrypts only the payload, never the proof.
 - **Pure Rust:** a `parallel` feature, clippy pedantic, and a CI coverage gate that fails on any uncovered line.
@@ -60,8 +60,8 @@ class-group scheme and ring dimension 16384 for the lattice scheme, length 100. 
 
 | scheme | rule | client encrypt | server validate | analyst decrypt |
 |---|---|---|---|---|
-| class group | binary | 1.68 s | 0.17 s | 0.13 s |
-| class group | norm_bound | 24.7 s | 0.91 s | 0.14 s |
+| class group | binary | 0.71 s | 64 ms | 57 ms |
+| class group | norm_bound | 13.7 s | 0.45 s | 66 ms |
 | lattice | binary | 12.5 ms | 0.27 ms | 2.8 ms |
 | lattice | norm_bound | 134 ms | 0.36 ms | 2.8 ms |
 
@@ -73,7 +73,7 @@ The lattice scheme pays in size: its public key grows by 569 KB per vector coord
 ```toml
 [dependencies]
 niva = { git = "https://github.com/WeiqiNs/NIVA" }
-rust_flpcp = { git = "https://github.com/WeiqiNs/RustFLPCP", rev = "2db89dc351a66cc48f2587f26b5c9e73cb60ecb2" }
+rust_flpcp = { git = "https://github.com/WeiqiNs/RustFLPCP", rev = "905e46733c83dbc7b590365b30446f516dd269e7" }
 rand = "0.8"
 ```
 
@@ -105,6 +105,6 @@ encryption in [Rust](https://github.com/WeiqiNs/RustPFE), [Go](https://github.co
 ## Build and test
 
 ```sh
-cargo test --all && cargo clippy --all --all-targets -- -D warnings
-cargo llvm-cov --all --fail-uncovered-lines 0 && cargo bench --bench pear
+cargo test --all --features parallel -- --include-ignored && cargo clippy --all --all-targets -- -D warnings
+cargo llvm-cov --all --fail-uncovered-lines 0 && cargo bench --bench pear --features parallel
 ```

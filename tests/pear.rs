@@ -59,6 +59,7 @@ fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
     case: &Case<C>,
 ) where
     PearError: From<S::Error>,
+    S::Ciphertext: PartialEq,
 {
     let mut rng = rng();
     let label = format!("{scheme:?} {:?}", case.circuit);
@@ -105,11 +106,16 @@ fn assert_protocol<S: Ipfe<Field128>, C: Circuit<Field128> + Clone + Debug>(
         Ok(case.honest[0][..case.payload_len].to_vec()),
         "{label}"
     );
+    let again = server
+        .aggregate(&[contributions[0].clone()], &mut rng)
+        .unwrap();
+    assert!(single != again, "{label}");
 }
 
 fn assert_cases<S: Ipfe<Field128>>(scheme: &Arc<S>)
 where
     PearError: From<S::Error>,
+    S::Ciphertext: PartialEq,
 {
     assert_protocol(
         scheme,

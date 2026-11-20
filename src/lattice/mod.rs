@@ -132,7 +132,7 @@ impl<F: LatticeField> PublicKey<F> {
         let offset = params.forward(&params.sample_coefficients(rng));
         let noises = centered_binomials(message.len(), rng);
         let coords = cfg_iter!(message)
-            .zip(&self.bases[..self.len])
+            .zip(self.bases.as_slice())
             .zip(noises)
             .map(|((&value, base), noise)| {
                 params.constant_term(base, &randomness)
@@ -539,6 +539,10 @@ pub(crate) mod tests {
             "MasterSecretKey { dimension: 16, .. }"
         );
         assert_eq!(format!("{public_key:?}"), "PublicKey { dimension: 16, .. }");
+        assert_eq!(
+            format!("{:?}", public_key.prefix(2).unwrap()),
+            "PublicKey { dimension: 2, .. }"
+        );
         let ciphertext = public_key
             .encrypt(&random(16, &mut rng()), &mut rng())
             .unwrap();
