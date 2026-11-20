@@ -135,7 +135,7 @@ impl FixedBase {
 }
 
 fn pippenger(group: &ClassGroup, bases: &[Form], exponents: &[IBig]) -> Option<Form> {
-    let window = bases.len().bit_width().saturating_sub(3).clamp(2, 16);
+    let window = bases.len().bit_width().saturating_sub(1).clamp(2, 16);
     let digits: Vec<Vec<i32>> = exponents
         .iter()
         .map(|exponent| signed_digits(exponent, window))
@@ -171,8 +171,10 @@ pub(crate) fn multi_exp(group: &ClassGroup, bases: &[Form], exponents: &[IBig]) 
         .filter_map(|(bases, exponents)| pippenger(group, bases, exponents))
         .collect();
     partials
-        .into_iter()
-        .reduce(|left, right| group.compose(&left, &right))
+        .iter()
+        .fold(None, |total, partial| {
+            Some(accumulate(group, total, partial))
+        })
         .unwrap_or_else(|| group.identity())
 }
 

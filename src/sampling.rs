@@ -25,10 +25,20 @@ pub(crate) fn uniform_below(bound: &UBig, rng: &mut (impl CryptoRng + RngCore)) 
     }
 }
 
-pub(crate) fn centered_binomial(rng: &mut (impl CryptoRng + RngCore)) -> i64 {
+pub(crate) fn centered_binomials(count: usize, rng: &mut (impl CryptoRng + RngCore)) -> Vec<i64> {
     let mask = (1u64 << NOISE_ETA) - 1;
-    let bits = rng.next_u64();
-    i64::from((bits & mask).count_ones()) - i64::from(((bits >> NOISE_ETA) & mask).count_ones())
+    let mut bytes = vec![0u8; count * 8];
+    rng.fill_bytes(&mut bytes);
+    bytes
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|&chunk| {
+            let bits = u64::from_le_bytes(chunk);
+            i64::from((bits & mask).count_ones())
+                - i64::from(((bits >> NOISE_ETA) & mask).count_ones())
+        })
+        .collect()
 }
 
 fn bernoulli_exp_neg_at_most_one(
@@ -99,7 +109,9 @@ impl DiscreteGaussian {
 
 #[cfg(test)]
 mod tests {
-    use super::{DiscreteGaussian, NOISE_ETA, bernoulli_exp_neg, centered_binomial, uniform_below};
+    use super::{
+        DiscreteGaussian, NOISE_ETA, bernoulli_exp_neg, centered_binomials, uniform_below,
+    };
     use ark_std::rand::SeedableRng;
     use ark_std::rand::rngs::StdRng;
     use dashu_int::UBig;
@@ -177,7 +189,7 @@ mod tests {
     fn centered_binomial_matches_its_moments() {
         const SAMPLES: u16 = 20_000;
         let mut rng = rng();
-        let samples: Vec<i64> = (0..SAMPLES).map(|_| centered_binomial(&mut rng)).collect();
+        let samples = centered_binomials(usize::from(SAMPLES), &mut rng);
         let count = f64::from(SAMPLES);
         let values: Vec<f64> = samples
             .iter()

@@ -2,7 +2,9 @@ mod exp;
 
 pub(crate) use exp::{FixedBase, multi_exp, pow};
 
-use dashu_int::ops::{DivRem, DivRemEuclid, ExtendedGcd, RemEuclid, SquareRoot, UnsignedAbs};
+use dashu_int::ops::{
+    BitTest, DivRem, DivRemEuclid, ExtendedGcd, RemEuclid, SquareRoot, UnsignedAbs,
+};
 use dashu_int::{IBig, UBig};
 use std::mem;
 
@@ -121,16 +123,13 @@ impl ClassGroup {
             right_part,
             shift,
         } = composition;
-        let (mut far, mut far_coeff) = (left_part.clone(), IBig::ZERO);
-        let (mut near, mut near_coeff) = (shift, IBig::ONE);
-        let mut odd = false;
-        while near > self.nucomp_bound {
-            let (quotient, remainder) = (&far).div_rem(&near);
-            let next_coeff = &far_coeff - &quotient * &near_coeff;
-            (far, near) = (near, remainder);
-            (far_coeff, near_coeff) = (near_coeff, next_coeff);
-            odd = !odd;
-        }
+        let Euclid {
+            far,
+            far_coeff,
+            near,
+            near_coeff,
+            odd,
+        } = partial_euclid(left_part.clone(), shift, &self.nucomp_bound);
 
         let scaled_c = &common * &right.c;
         let norm = |value: &IBig, coeff: &IBig| {
@@ -146,6 +145,84 @@ impl ClassGroup {
             c: norm(&near, &near_coeff),
         })
     }
+}
+
+const LEHMER_BITS: usize = 63;
+const LEHMER_COFACTOR_BITS: u32 = 31;
+
+#[derive(Debug, PartialEq, Eq)]
+struct Euclid {
+    far: IBig,
+    far_coeff: IBig,
+    near: IBig,
+    near_coeff: IBig,
+    odd: bool,
+}
+
+impl Euclid {
+    fn step(&mut self) {
+        let (quotient, remainder) = (&self.far).div_rem(&self.near);
+        let next_coeff = &self.far_coeff - &quotient * &self.near_coeff;
+        self.far = mem::replace(&mut self.near, remainder);
+        self.far_coeff = mem::replace(&mut self.near_coeff, next_coeff);
+        self.odd = !self.odd;
+    }
+
+    fn lehmer_chunk(&mut self) {
+        let shift = self.far.bit_len().saturating_sub(LEHMER_BITS);
+        let top = |value: &IBig| i128::try_from(&(value >> shift)).expect("top bits fit in i128");
+        let (mut far_top, mut near_top) = (top(&self.far), top(&self.near));
+        let (mut far_row, mut near_row) = ([1_i128, 0], [0_i128, 1]);
+        let cap = 1_i128 << LEHMER_COFACTOR_BITS;
+        let mut odd = false;
+        while near_top + near_row[0] > 0 && near_top + near_row[1] > 0 {
+            let quotient = (far_top + far_row[0]) / (near_top + near_row[0]);
+            let next_row = [
+                far_row[0] - quotient * near_row[0],
+                far_row[1] - quotient * near_row[1],
+            ];
+            if quotient != (far_top + far_row[1]) / (near_top + near_row[1])
+                || next_row.iter().any(|entry| entry.abs() >= cap)
+            {
+                break;
+            }
+            far_row = mem::replace(&mut near_row, next_row);
+            (far_top, near_top) = (near_top, far_top - quotient * near_top);
+            odd = !odd;
+        }
+        let apply = |row: [i128; 2], far: &IBig, near: &IBig| {
+            far * IBig::from(row[0]) + near * IBig::from(row[1])
+        };
+        (self.far, self.near) = (
+            apply(far_row, &self.far, &self.near),
+            apply(near_row, &self.far, &self.near),
+        );
+        (self.far_coeff, self.near_coeff) = (
+            apply(far_row, &self.far_coeff, &self.near_coeff),
+            apply(near_row, &self.far_coeff, &self.near_coeff),
+        );
+        self.odd ^= odd;
+    }
+}
+
+fn partial_euclid(far: IBig, near: IBig, bound: &IBig) -> Euclid {
+    let lehmer_bits = bound.bit_len() + LEHMER_COFACTOR_BITS as usize + 3;
+    let mut state = Euclid {
+        far,
+        far_coeff: IBig::ZERO,
+        near,
+        near_coeff: IBig::ONE,
+        odd: false,
+    };
+    while state.near > *bound {
+        if state.far.bit_len() >= lehmer_bits {
+            state.lehmer_chunk();
+        }
+        if state.near > *bound {
+            state.step();
+        }
+    }
+    state
 }
 
 fn reduce(form: Form) -> Form {
@@ -180,7 +257,7 @@ fn reduce(form: Form) -> Form {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{ClassGroup, Form, pow};
+    use super::{ClassGroup, Euclid, Form, partial_euclid, pow};
     use crate::number_theory::is_probable_prime;
     use crate::sampling::uniform_below;
     use ark_std::rand::rngs::StdRng;
@@ -241,6 +318,37 @@ pub(crate) mod tests {
             -magnitude
         } else {
             magnitude
+        }
+    }
+
+    #[test]
+    fn partial_euclid_matches_single_steps() {
+        let mut rng = rng();
+        let below =
+            |bits: usize, rng: &mut StdRng| IBig::from(uniform_below(&(UBig::ONE << bits), rng));
+        for bits in [8, 40, 64, 100, 300, 1040] {
+            for bound_bits in [1, 16, bits / 4, bits / 2, bits - 1] {
+                for _ in 0..25 {
+                    let far = below(bits, &mut rng) + IBig::ONE;
+                    let near = IBig::from(uniform_below(&(&far).unsigned_abs(), &mut rng));
+                    let bound = below(bound_bits, &mut rng) + IBig::ONE;
+                    let mut expected = Euclid {
+                        far: far.clone(),
+                        far_coeff: IBig::ZERO,
+                        near: near.clone(),
+                        near_coeff: IBig::ONE,
+                        odd: false,
+                    };
+                    while expected.near > bound {
+                        expected.step();
+                    }
+                    assert_eq!(
+                        partial_euclid(far.clone(), near.clone(), &bound),
+                        expected,
+                        "{far} {near} {bound}"
+                    );
+                }
+            }
         }
     }
 

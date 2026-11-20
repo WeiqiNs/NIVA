@@ -80,27 +80,36 @@ impl<F: PrimeField, S: Ipfe<F>> Clone for Contribution<F, S> {
 }
 
 #[cfg(feature = "parallel")]
-fn tree_reduce<T: Send, E: Send>(
-    items: Vec<T>,
-    combine: impl Fn(T, T) -> Result<T, E> + Send + Sync,
-) -> Result<Option<T>, E> {
-    items
-        .into_par_iter()
-        .map(Ok)
-        .try_reduce_with(combine)
-        .transpose()
+fn sum_onto<T: Clone + Send + Sync, E: Send>(
+    first: T,
+    items: &[T],
+    add: impl Fn(&T, &T) -> Result<T, E> + Send + Sync,
+) -> Result<T, E> {
+    let rest = items
+        .par_iter()
+        .try_fold(
+            || None,
+            |sum: Option<T>, item| match sum {
+                Some(sum) => add(&sum, item).map(Some),
+                None => Ok(Some(item.clone())),
+            },
+        )
+        .try_reduce(
+            || None,
+            |left, right| match (left, right) {
+                (Some(left), Some(right)) => add(&left, &right).map(Some),
+                (left, right) => Ok(left.or(right)),
+            },
+        )?;
+    match rest {
+        Some(rest) => add(&first, &rest),
+        None => Ok(first),
+    }
 }
 
 #[cfg(not(feature = "parallel"))]
-fn tree_reduce<T, E>(
-    items: Vec<T>,
-    combine: impl Fn(T, T) -> Result<T, E>,
-) -> Result<Option<T>, E> {
-    let mut items = items.into_iter();
-    items
-        .next()
-        .map(|first| items.try_fold(first, combine))
-        .transpose()
+fn sum_onto<T, E>(first: T, items: &[T], add: impl Fn(&T, &T) -> Result<T, E>) -> Result<T, E> {
+    items.iter().try_fold(first, |sum, item| add(&sum, item))
 }
 
 impl<F: PrimeField, S: Ipfe<F>> Analyst<F, S>
@@ -226,18 +235,15 @@ where
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<S::Ciphertext, PearError> {
         let payload_key = &self.payload_key;
-        let fresh = S::encrypt(payload_key, &vec![F::ZERO; S::dimension(payload_key)], rng)?;
-        let ciphertexts = contributions
-            .iter()
-            .map(|Contribution(ciphertext)| ciphertext.clone())
-            .collect();
-        let sum = tree_reduce(ciphertexts, |left, right| {
-            S::add(payload_key, &left, &right).map_err(PearError::from)
-        })?;
-        Ok(match sum {
-            Some(sum) => S::add(payload_key, &fresh, &sum)?,
-            None => fresh,
+        let fresh = Contribution(S::encrypt(
+            payload_key,
+            &vec![F::ZERO; S::dimension(payload_key)],
+            rng,
+        )?);
+        sum_onto(fresh, contributions, |left, right| {
+            Ok(Contribution(S::add(payload_key, &left.0, &right.0)?))
         })
+        .map(|Contribution(sum)| sum)
     }
 }
 
