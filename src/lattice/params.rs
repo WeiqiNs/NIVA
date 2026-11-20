@@ -338,7 +338,8 @@ pub(crate) mod tests {
             + log2(&Field128::MODULUS_MINUS_ONE_DIV_TWO)
             + 0.5 * f64::from(u32::try_from(2 * MAX_DIMENSION * ring_dimension).unwrap()).log2()
             + variance.log2();
-        assert!(log2(&Headroom150::MODULUS) - 2.0 >= worst_case_noise);
+        let headroom_bits = log2(&Headroom150::MODULUS) - 2.0 - worst_case_noise;
+        assert!((0.0..1.0).contains(&headroom_bits), "{headroom_bits}");
 
         let params = test_scheme();
         assert_eq!(params.ring_dimension(), TEST_RING_DIMENSION);
@@ -347,12 +348,20 @@ pub(crate) mod tests {
             format!("Lattice {{ ring_dimension: {TEST_RING_DIMENSION}, .. }}")
         );
         assert_eq!(params.delta * params.delta_inverse, Field128::ONE);
-        for dimension in [1, 1000, 2 * ring_dimension] {
+        for dimension in [1, 1000, 2 * ring_dimension, usize::MAX] {
             assert_eq!(
                 Lattice::<Field128>::new(dimension).err(),
                 Some(LatticeError::RingDimension { dimension })
             );
         }
         assert!(Lattice::<Field128>::new(ring_dimension).is_ok());
+    }
+
+    #[test]
+    fn public_mask_comes_from_the_callers_rng() {
+        let params = test_scheme();
+        let mask = |seed| params.sample_uniform(&mut StdRng::seed_from_u64(seed));
+        assert_eq!(mask(1), mask(1));
+        assert_ne!(mask(1), mask(2));
     }
 }
